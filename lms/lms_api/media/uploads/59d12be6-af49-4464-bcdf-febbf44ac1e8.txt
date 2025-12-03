@@ -1,0 +1,381 @@
+You are an expert full-stack architect and senior engineer specialized in:
+
+- Backend: Python, Django, Django REST Framework (DRF), MySQL
+- Frontend: React (with React Router), Bootstrap 5 (or Tailwind if needed)
+- Domain: Online Learning Platforms / LMS (Udemy, Coursera style)
+
+I have an existing LMS project with this tech stack:
+
+- Backend: Django + DRF + MySQL
+- Frontend: React + Bootstrap 5
+- Roles: Visitor (public), Student, Teacher, Admin
+
+I want you to help me design and implement a **clean, logical, production-like architecture** for the **Teacher Panel**, including **Quiz Management**, following standard LMS patterns.
+
+Please read the whole specification below and then:
+
+1. Propose or refactor the **backend models, serializers, viewsets, permissions, and URLs**.
+2. Propose or refactor the **frontend structure and components** for React.
+3. Keep the logic **clean and realistic**, like a simplified Udemy/Coursera.
+4. Keep the code reasonably sized and modular. Don’t dump everything into one file.
+
+You can assume I will paste existing code (models.py, views.py, etc.) after this message for you to refactor.
+
+====================================================
+1. HIGH-LEVEL SYSTEM CONTEXT
+====================================================
+
+We have 4 main areas:
+
+1. Public Website
+   - Explore courses by category
+   - Search courses
+   - Course detail page
+   - About, Contact, FAQ, Support
+   - Register as Student or Teacher
+
+2. Student Panel
+   - Login / Register / Profile / Change password
+   - View enrolled courses
+   - Access course content (lessons, materials)
+   - Take quizzes for enrolled courses
+   - View quiz results
+   - View teacher profile
+   - Receive announcements / messages from teachers
+
+3. Teacher Panel  (**focus of this prompt**)
+   - Authentication & profile
+   - Manage courses they own
+   - Manage course content (lessons, materials)
+   - Manage quizzes and questions for their courses
+   - View enrolled students and their progress
+   - View quiz results of students
+   - Send announcements/messages to enrolled students
+
+4. Admin Panel
+   - Global management (categories, all users, all courses)
+   - Add/Update/Delete any content
+   - Enable/disable any course, student, or teacher
+   - Search anything across the system
+
+Important logic notes:
+
+- **Categories** are **system-level** and should be managed by **Admin**, not Teacher.
+- Teacher can only **select** a Category when creating/editing a Course.
+- Teacher has access **only to their own courses and related data** (lessons, quizzes, students enrolled in their courses, etc.).
+- Progress is calculated automatically from student activity; teachers can **view** but not manually change student progress.
+- Messaging / announcements are done **per course** (to all enrolled students in that course, or optionally a specific student in that course).
+
+====================================================
+2. BACKEND DOMAIN MODEL (DJANGO + DRF)
+====================================================
+
+Please design or refactor the backend with something like the following entities.
+You can adjust names/fields slightly if needed to keep things clean and DRY.
+
+### 2.1 User & Roles
+
+We have a single User model (Django auth user or a custom one) with roles:
+
+- Student
+- Teacher
+- Admin
+
+We can use:
+- A `role` field (e.g., choices: STUDENT, TEACHER, ADMIN)
+- Or groups/permissions (your choice, but keep it simple and explicit).
+
+### 2.2 Category (Admin-managed)
+
+- `Category`
+  - id
+  - name
+  - slug
+  - description (optional)
+  - created_at, updated_at
+
+Only Admin can CRUD categories.
+Teachers just select a category when creating courses.
+
+### 2.3 Course
+
+- `Course`
+  - id
+  - title
+  - short_description
+  - detailed_description
+  - category (FK to Category)
+  - teacher (FK to User with role=TEACHER)
+  - level (e.g., BEGINNER, INTERMEDIATE, ADVANCED - optional)
+  - language (optional)
+  - status (DRAFT, PUBLISHED, DISABLED)
+  - thumbnail (optional URL or file path)
+  - created_at, updated_at
+
+Rules:
+
+- Only the `teacher` who owns the course (or Admin) can edit it.
+- Students enroll into courses (not into categories).
+
+### 2.4 Lesson and Study Material
+
+To keep it simple for the project:
+
+- `Lesson`
+  - id
+  - course (FK → Course)
+  - title
+  - content (text or HTML, optional)
+  - video_url (optional)
+  - order (integer, for sorting)
+  - created_at, updated_at
+
+- `StudyMaterial`
+  - id
+  - course (FK → Course)
+  - title
+  - file_url or external_url
+  - description (optional)
+  - created_at, updated_at
+
+### 2.5 Enrollment and Lesson Progress
+
+- `Enrollment`
+  - id
+  - student (FK → User with role=STUDENT)
+  - course (FK → Course)
+  - enrolled_at
+  - status (ACTIVE, CANCELLED, etc. - optional)
+
+Each student-course pair should be unique.
+
+- `LessonProgress`
+  - id
+  - enrollment (FK → Enrollment)
+  - lesson (FK → Lesson)
+  - is_completed (boolean)
+  - completed_at (optional)
+
+Progress for a given student+course is calculated as:
+number of completed lessons / total lessons in the course.
+
+Teacher can *view* progress, not edit it manually.
+
+### 2.6 Quiz, Question, and Quiz Result
+
+We want **Quiz Management** to be realistic but still manageable.
+
+- `Quiz`
+  - id
+  - course (FK → Course)
+  - title
+  - description (optional)
+  - time_limit_minutes (optional)
+  - status (DRAFT, PUBLISHED)
+  - created_at, updated_at
+
+- `Question` (MCQ only for now)
+  - id
+  - quiz (FK → Quiz)
+  - question_text
+  - option_a
+  - option_b
+  - option_c
+  - option_d
+  - correct_option (choices: "A", "B", "C", "D")
+  - mark (integer or float)
+
+- `QuizResult`
+  - id
+  - quiz (FK → Quiz)
+  - student (FK → User with role=STUDENT)
+  - score (numeric)
+  - taken_at
+  - details (optional JSON/text for future use, e.g. which answers were chosen)
+
+Rules:
+
+- Teachers can create/modify quizzes **only for their own courses**.
+- Students can take a quiz **only if enrolled in that course**.
+- The system auto-grades MCQ by comparing chosen options with `correct_option`.
+
+### 2.7 Messaging / Announcements
+
+Simplified version:
+
+- `Message`
+  - id
+  - sender (FK → User, usually a Teacher)
+  - receiver (FK → User, nullable; if null and a course is set, it’s a broadcast to all enrolled students)
+  - course (FK → Course, optional but usually set)
+  - title
+  - content
+  - created_at
+
+Use cases:
+
+- Teacher sends an announcement to **all students** in a course.
+- (Optional) Teacher sends a message to a specific student in a course.
+
+====================================================
+3. BACKEND API DESIGN (DRF)
+====================================================
+
+Please create or refactor DRF **serializers, viewsets, and routers** around these principles:
+
+1. Use `ModelViewSet` where appropriate.
+2. Add clean permission classes, for example:
+   - `IsTeacher`, `IsStudent`, `IsAdmin`, `IsOwnerOrReadOnly`, etc.
+3. Enforce role-based access:
+   - Teacher can access only their own courses, lessons, quizzes, students in those courses, and messages they send.
+   - Students can access only their own enrollments, progress, quiz results, and messages received.
+   - Admin can manage everything.
+
+Core endpoints for Teacher Panel (prefixes are suggestions, you can adjust):
+
+- `/api/teacher/courses/`  
+  - List courses owned by the authenticated teacher
+  - Create new course
+- `/api/teacher/courses/{id}/`  
+  - Retrieve, update, delete (only if teacher owns it)
+
+- `/api/teacher/courses/{id}/lessons/`  
+  - List/Create lessons for a course
+- `/api/teacher/lessons/{id}/`  
+  - Retrieve/Update/Delete a lesson (only if belongs to teacher’s course)
+
+- `/api/teacher/courses/{id}/materials/`
+- `/api/teacher/materials/{id}/`
+
+- `/api/teacher/courses/{id}/students/`
+  - Return list of enrolled students for this course, with basic progress percentage.
+
+- `/api/teacher/courses/{id}/quizzes/`
+  - List/Create quizzes for that course
+- `/api/teacher/quizzes/{id}/`
+  - Retrieve/Update/Delete quiz (if belongs to teacher’s course)
+
+- `/api/teacher/quizzes/{id}/questions/`
+  - List/Create questions for that quiz
+- `/api/teacher/questions/{id}/`
+  - Retrieve/Update/Delete question
+
+- `/api/teacher/quizzes/{id}/results/`
+  - View list of students’ results for that quiz
+
+- `/api/teacher/courses/{id}/messages/`
+  - Create a new announcement message for all enrolled students in that course
+- `/api/teacher/messages/`
+  - Optionally list messages sent by this teacher
+
+Student-side endpoints (just for completeness):
+
+- `/api/student/enrollments/`
+- `/api/student/courses/` (list of enrolled courses)
+- `/api/student/courses/{id}/lessons/`
+- `/api/student/quizzes/{id}/take/` (submit answers, return score)
+- `/api/student/quizzes/{id}/result/`
+- `/api/student/messages/`
+
+Please:
+
+- Show how you would structure `urls.py` using DRF routers and nested routes where appropriate.
+- Implement or outline serializers for Course, Lesson, StudyMaterial, Enrollment, Quiz, Question, QuizResult, Message with clean, minimal fields.
+
+====================================================
+4. FRONTEND (REACT) – TEACHER PANEL
+====================================================
+
+On the frontend side (React + React Router), I want a clean structure for the Teacher Panel.  
+You can assume an existing React app, but please propose/refactor to something like:
+
+- `src/modules/teacher/`
+  - `TeacherDashboard.jsx`
+  - `TeacherCourses.jsx`
+  - `CourseForm.jsx`
+  - `CourseContentManage.jsx`   (lessons + materials)
+  - `CourseStudents.jsx`
+  - `CourseQuizzes.jsx`
+  - `QuizForm.jsx`
+  - `QuizQuestions.jsx`
+  - `QuizResults.jsx`
+  - `TeacherMessages.jsx`
+- `src/modules/student/` (for reference, not focus now)
+- `src/modules/public/`
+- `src/modules/admin/`
+- `src/api/teacherApi.js` (or similar API abstraction using axios/fetch)
+
+React Router example routes for teacher:
+
+- `/teacher/dashboard`
+- `/teacher/courses`
+- `/teacher/courses/create`
+- `/teacher/courses/:courseId/edit`
+- `/teacher/courses/:courseId/content`
+- `/teacher/courses/:courseId/students`
+- `/teacher/courses/:courseId/quizzes`
+- `/teacher/quizzes/:quizId/edit`
+- `/teacher/quizzes/:quizId/questions`
+- `/teacher/quizzes/:quizId/results`
+- `/teacher/messages`
+
+UI/UX expectations:
+
+- Teacher dashboard:
+  - Cards with total courses, total enrolled students, total quiz attempts, etc.
+  - Table/list of recent courses or recent enrollments.
+- Courses page:
+  - Table/list of teacher’s courses (title, category, status, enrolled count)
+  - Actions: Edit, Manage Content, Manage Quizzes, View Students
+- Content management:
+  - List of lessons with order, title
+  - CRUD for lessons
+  - List/Add study materials
+- Quiz management:
+  - List quizzes per course
+  - Create/edit quiz (title, description, time limit, status)
+  - Manage questions for each quiz (MCQ with 4 options and 1 correct answer)
+  - Show results (student, score, date)
+- Messages:
+  - Form to send an announcement to all students of a specific course.
+
+Styling:
+
+- Use Bootstrap 5 (or Tailwind if I decide to later).
+- Make layout responsive and clean: a sidebar for navigation (courses, quizzes, students, messages, profile) and a main content area.
+
+====================================================
+5. WHAT I WANT YOU TO DO STEP-BY-STEP
+====================================================
+
+1. First, based on this spec, propose:
+   - Backend: final list of models (with fields), and a brief explanation of permissions per role.
+   - Backend: high-level API endpoints (for DRF ViewSets / URLs).
+   - Frontend: folder structure + a list of React components and their responsibilities for the Teacher Panel.
+
+2. Then, after I paste my existing code (models.py, views.py, urls.py, some React components), refactor it to match this clean architecture:
+   - Move Category CRUD to Admin side only.
+   - Ensure Teacher only manages their own courses and related entities.
+   - Implement Quiz (models + serializers + viewsets + endpoints).
+   - Implement or update Teacher-facing endpoints (courses, lessons, quizzes, questions, students, results, messages).
+   - Keep the code understandable and not over-engineered.
+
+3. Finally, generate example implementations for:
+   - Django models (if needed or if big changes are required).
+   - DRF serializers & viewsets for Teacher-related entities.
+   - Example React components for:
+     - `TeacherDashboard.jsx`
+     - `TeacherCourses.jsx`
+     - `CourseQuizzes.jsx`
+     - `QuizQuestions.jsx`
+     - `QuizResults.jsx`
+   - Example `teacherApi.js` functions using axios to call the backend endpoints.
+
+Make sure that:
+
+- Role logic is enforced correctly (Teacher vs Student vs Admin).
+- URLs and endpoints are coherent and RESTful.
+- The Teacher Panel flow matches a realistic LMS:
+  Login → Dashboard → Manage Courses → Manage Content & Quizzes → View Students & Results → Send Announcements.
+
+I will now paste my existing backend (models.py, views.py, urls.py) and frontend (React components) so you can refactor them into this architecture.
