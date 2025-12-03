@@ -17,38 +17,11 @@ from .serializers import (
     AnnouncementListSerializer,
     AnnouncementSentSerializer,
     AnnouncementDetailSerializer,
-    AnnouncementCreateSerializer,
     AnnouncementReadStatusSerializer
 )
-from .permissions import IsCourseTeacher, IsEnrolledStudent, CanViewAnnouncement
+from .permissions import IsEnrolledStudent, CanViewAnnouncement
 from courses.models import Course
 from enrollments.models import Enrollment
-
-
-class SendAnnouncementAPIView(generics.CreateAPIView):
-    """
-    POST /api/announcements/send/
-    
-    Send an announcement to all enrolled students of a course.
-    Only teachers of that course may send.
-    
-    Request body:
-    {
-        "course_id": <course_id>,
-        "title": "",
-        "message": ""
-    }
-    """
-    serializer_class = AnnouncementCreateSerializer
-    permission_classes = [permissions.IsAuthenticated, IsCourseTeacher]
-    
-    def perform_create(self, serializer):
-        """Create announcement and read statuses for enrolled students."""
-        # Serializer already validates course_id and teacher
-        announcement = serializer.save()
-        
-        # Read statuses are created in serializer's create method
-        return announcement
 
 
 class SentAnnouncementsListAPIView(generics.ListAPIView):

@@ -73,11 +73,59 @@ class TeacherQuizViewSet(viewsets.ModelViewSet):
         return QuizSerializer
     
     def perform_create(self, serializer):
-        """Ensure teacher owns the course."""
+        """Ensure teacher owns the course and create notifications."""
         course = serializer.validated_data['course']
         if course.teacher != self.request.user:
             raise permissions.PermissionDenied("You can only create quizzes for your own courses.")
-        serializer.save()
+        quiz = serializer.save()
+        
+        # Create notification for teacher
+        from notifications.models import create_notification
+        create_notification(
+            user=self.request.user,
+            title=f"Quiz Created: {quiz.title}",
+            message=f"Your quiz '{quiz.title}' has been successfully created in {course.title}.",
+            notification_type='quiz_created',
+            target_url=f"/teacher/quizzes/{quiz.id}/edit",
+            course=course
+        )
+        
+        # Create notifications for enrolled students when quiz is published
+        if quiz.is_published:
+            from notifications.models import create_notifications_for_enrolled_students
+            create_notifications_for_enrolled_students(
+                course=course,
+                title=f"New Quiz: {quiz.title}",
+                message=f"A new quiz has been published in {course.title}.",
+                notification_type='quiz_created',
+                target_url=f"/courses/{course.id}/quizzes/{quiz.id}/take"
+            )
+    
+    def perform_update(self, serializer):
+        """Update quiz and create notifications."""
+        quiz = serializer.save()
+        
+        # Create notification for teacher
+        from notifications.models import create_notification
+        create_notification(
+            user=self.request.user,
+            title=f"Quiz Updated: {quiz.title}",
+            message=f"Your quiz '{quiz.title}' has been updated.",
+            notification_type='quiz_updated',
+            target_url=f"/teacher/quizzes/{quiz.id}/edit",
+            course=quiz.course
+        )
+        
+        # Create notifications for enrolled students when quiz is published/updated
+        if quiz.is_published:
+            from notifications.models import create_notifications_for_enrolled_students
+            create_notifications_for_enrolled_students(
+                course=quiz.course,
+                title=f"Quiz Updated: {quiz.title}",
+                message=f"Quiz '{quiz.title}' has been updated in {quiz.course.title}.",
+                notification_type='quiz_updated',
+                target_url=f"/courses/{quiz.course.id}/quizzes/{quiz.id}/take"
+            )
 
 
 class QuestionCreateAPIView(generics.CreateAPIView):
@@ -285,6 +333,18 @@ class QuizSubmitAPIView(generics.CreateAPIView):
         attempt.completed_at = timezone.now()
         attempt.save()
         
+        # Create notification for teacher when student completes quiz
+        from notifications.models import create_notification
+        score_percentage = (obtained_points / total_points * 100) if total_points > 0 else 0
+        create_notification(
+            user=quiz.course.teacher,
+            title=f"Quiz Completed: {quiz.title}",
+            message=f"{request.user.full_name or request.user.email} completed quiz '{quiz.title}' in {quiz.course.title} with score {score_percentage:.1f}%.",
+            notification_type='student_submission',
+            target_url=f"/teacher/courses/{quiz.course.id}/quizzes",
+            course=quiz.course
+        )
+        
         return Response({
             'score': obtained_points,
             'total_points': total_points,
@@ -325,11 +385,37 @@ class TeacherAssignmentViewSet(viewsets.ModelViewSet):
         return AssignmentSerializer
     
     def perform_create(self, serializer):
-        """Ensure teacher owns the course."""
+        """Ensure teacher owns the course and create notifications."""
         course = serializer.validated_data['course']
         if course.teacher != self.request.user:
             raise permissions.PermissionDenied("You can only create assignments for your own courses.")
-        serializer.save()
+        assignment = serializer.save()
+        
+        # Create notifications for enrolled students when assignment is published
+        if assignment.is_published:
+            from notifications.models import create_notifications_for_enrolled_students
+            create_notifications_for_enrolled_students(
+                course=course,
+                title=f"New Assignment: {assignment.title}",
+                message=f"A new assignment has been published in {course.title}.",
+                notification_type='assignment_created',
+                target_url=f"/courses/{course.id}/assignments/{assignment.id}"
+            )
+    
+    def perform_update(self, serializer):
+        """Update assignment and create notification if published."""
+        assignment = serializer.save()
+        
+        # Create notifications for enrolled students when assignment is published/updated
+        if assignment.is_published:
+            from notifications.models import create_notifications_for_enrolled_students
+            create_notifications_for_enrolled_students(
+                course=assignment.course,
+                title=f"Assignment Updated: {assignment.title}",
+                message=f"Assignment '{assignment.title}' has been updated in {assignment.course.title}.",
+                notification_type='assignment_updated',
+                target_url=f"/courses/{assignment.course.id}/assignments/{assignment.id}"
+            )
     
     @action(detail=True, methods=['get'])
     def submissions(self, request, pk=None):
@@ -462,6 +548,18 @@ class AssignmentSubmitAPIView(generics.CreateAPIView):
                 submitted_at=timezone.now()
             )
             created = True
+        
+        # Create notification for teacher when student submits assignment
+        if created or submission.status == 'submitted':
+            from notifications.models import create_notification
+            create_notification(
+                user=assignment.course.teacher,
+                title=f"New Assignment Submission: {assignment.title}",
+                message=f"{request.user.full_name or request.user.email} submitted assignment '{assignment.title}' in {assignment.course.title}.",
+                notification_type='student_submission',
+                target_url=f"/teacher/assignments/{assignment.id}/submissions",
+                course=assignment.course
+            )
         
         serializer = self.get_serializer(submission)
         return Response(serializer.data, status=status.HTTP_201_CREATED if created else status.HTTP_200_OK)

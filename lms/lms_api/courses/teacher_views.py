@@ -70,20 +70,44 @@ class TeacherSectionViewSet(viewsets.ModelViewSet):
         return SectionSerializer
     
     def perform_create(self, serializer):
-        """Validate that the course belongs to the teacher."""
+        """Validate that the course belongs to the teacher and create notifications."""
         course = serializer.validated_data.get('course')
         if course.teacher != self.request.user:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("You can only create sections for your own courses.")
-        serializer.save()
+        section = serializer.save()
+        
+        # Create notifications for enrolled students when section is created
+        # Only if course is published
+        if course.is_published:
+            from notifications.models import create_notifications_for_enrolled_students
+            create_notifications_for_enrolled_students(
+                course=course,
+                title=f"New Section: {section.title}",
+                message=f"New section '{section.title}' has been added to {course.title}.",
+                notification_type='section_created',
+                target_url=f"/courses/{course.id}/learn"
+            )
     
     def perform_update(self, serializer):
-        """Validate that the course belongs to the teacher."""
+        """Validate that the course belongs to the teacher and create notifications."""
         course = serializer.validated_data.get('course', serializer.instance.course)
         if course.teacher != self.request.user:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("You can only update sections for your own courses.")
-        serializer.save()
+        section = serializer.save()
+        
+        # Create notifications for enrolled students when section is updated
+        # Only if course is published
+        if course.is_published:
+            from notifications.models import create_notifications_for_enrolled_students
+            create_notifications_for_enrolled_students(
+                course=course,
+                title=f"Section Updated: {section.title}",
+                message=f"Section '{section.title}' has been updated in {course.title}.",
+                notification_type='section_updated',
+                target_url=f"/courses/{course.id}/learn"
+            )
 
 
 class TeacherLessonViewSet(viewsets.ModelViewSet):
@@ -118,20 +142,44 @@ class TeacherLessonViewSet(viewsets.ModelViewSet):
         return context
     
     def perform_create(self, serializer):
-        """Validate that the section belongs to teacher's course."""
+        """Validate that the section belongs to teacher's course and create notifications."""
         section = serializer.validated_data.get('section')
         if section.course.teacher != self.request.user:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("You can only create lessons for sections in your own courses.")
-        serializer.save()
+        lesson = serializer.save()
+        
+        # Create notifications for enrolled students when lesson is created
+        # Only if course is published
+        if section.course.is_published:
+            from notifications.models import create_notifications_for_enrolled_students
+            create_notifications_for_enrolled_students(
+                course=section.course,
+                title=f"New Lesson: {lesson.title}",
+                message=f"New lesson available: {lesson.title} in {section.course.title}.",
+                notification_type='lesson_created',
+                target_url=f"/courses/{section.course.id}/learn"
+            )
     
     def perform_update(self, serializer):
-        """Validate that the section belongs to teacher's course."""
+        """Validate that the section belongs to teacher's course and create notifications."""
         section = serializer.validated_data.get('section', serializer.instance.section)
         if section.course.teacher != self.request.user:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("You can only update lessons for sections in your own courses.")
-        serializer.save()
+        lesson = serializer.save()
+        
+        # Create notifications for enrolled students when lesson is updated
+        # Only if course is published
+        if section.course.is_published:
+            from notifications.models import create_notifications_for_enrolled_students
+            create_notifications_for_enrolled_students(
+                course=section.course,
+                title=f"Lesson Updated: {lesson.title}",
+                message=f"Lesson '{lesson.title}' has been updated in {section.course.title}.",
+                notification_type='lesson_updated',
+                target_url=f"/courses/{section.course.id}/learn"
+            )
 
 
 

@@ -20,10 +20,15 @@ const Home = () => {
   const fetchAllData = async () => {
     try {
       setLoading(true);
+      // Note: fetchTopInstructors may fail if endpoint doesn't exist
+      // It's handled silently, so we don't need to await it
       await Promise.all([
         fetchPopularCourses(),
         fetchNewCourses(),
-        fetchTopInstructors(),
+        fetchTopInstructors().catch(() => {
+          // Silently fail - endpoint may not exist
+          setTopInstructors([]);
+        }),
       ]);
     } catch (err) {
       console.error('Error fetching initial data:', err);
@@ -36,9 +41,10 @@ const Home = () => {
   const fetchTopInstructors = async () => {
     try {
       const response = await getTopInstructors('students');
-      setTopInstructors(response.data.instructors || []);
+      setTopInstructors(response.data?.instructors || []);
     } catch (err) {
-      console.error('Error fetching top instructors:', err);
+      // Endpoint may not exist, fail silently
+      setTopInstructors([]);
     }
   };
 

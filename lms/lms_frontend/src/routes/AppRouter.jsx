@@ -35,12 +35,12 @@ import StudentPaymentHistory from '../pages/StudentPaymentHistory';
 import BrowseCourses from '../pages/BrowseCourses';
 import Messaging from '../pages/Messaging';
 import Navbar from '../components/Navbar';
-import SendAnnouncement from '../features/announcements/components/SendAnnouncement';
 import AnnouncementList from '../features/announcements/components/AnnouncementList';
 import TeacherAnnouncementHistory from '../pages/TeacherAnnouncementHistory';
 import TeacherAnnouncementDetail from '../pages/TeacherAnnouncementDetail';
 import StudentAnnouncementList from '../pages/StudentAnnouncementList';
 import StudentAnnouncementDetail from '../pages/StudentAnnouncementDetail';
+import NotificationPage from '../pages/NotificationPage';
 
 // ============================================
 // PROTECTED ROUTE - COMPLETELY REWRITTEN
@@ -368,14 +368,6 @@ const AppRouter = () => {
         />
         {/* Announcements */}
         <Route
-          path="/teacher/announcements/send"
-          element={
-            <TeacherRoute>
-              <SendAnnouncement />
-            </TeacherRoute>
-          }
-        />
-        <Route
           path="/teacher/announcements/sent"
           element={
             <TeacherRoute>
@@ -405,6 +397,15 @@ const AppRouter = () => {
             <StudentRoute>
               <StudentAnnouncementDetail />
             </StudentRoute>
+          }
+        />
+        {/* Notifications */}
+        <Route
+          path="/notifications"
+          element={
+            <ProtectedRoute>
+              <NotificationPage />
+            </ProtectedRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

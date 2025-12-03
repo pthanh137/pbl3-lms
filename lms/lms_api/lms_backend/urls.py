@@ -26,6 +26,7 @@ urlpatterns = [
     path('api/', include('analytics.urls')),
     path('api/', include('messaging.urls')),
     path('api/', include('announcements.urls')),
+    path('api/', include('notifications.urls')),
     # Student endpoints
     path('api/student/my-courses/', StudentMyCoursesAPIView.as_view(), name='student-my-courses'),
     # Student public profile

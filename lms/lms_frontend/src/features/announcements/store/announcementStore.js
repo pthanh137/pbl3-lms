@@ -18,7 +18,6 @@ const useAnnouncementStore = create((set, get) => ({
   courseAnnouncements: {}, // { courseId: [announcements] }
   loading: false,
   error: null,
-  sending: false,
   page: 1,
   hasMore: true,
   
@@ -194,68 +193,7 @@ const useAnnouncementStore = create((set, get) => ({
     }
   },
   
-  /**
-   * Send an announcement (teacher only)
-   * @param {number} courseId - Course ID
-   * @param {string} title - Announcement title
-   * @param {string} message - Announcement message
-   */
-  sendAnnouncement: async (courseId, title, message) => {
-    if (!courseId || !title || !message) {
-      set({ error: 'Course ID, title, and message are required' });
-      return;
-    }
-    
-    set({ sending: true, error: null });
-    
-    try {
-      const response = await announcementAPI.sendAnnouncement({
-        course_id: courseId,
-        title: title.trim(),
-        message: message.trim(),
-      });
-      
-      const newAnnouncement = response.data;
-      
-      // Optimistically update state
-      set((state) => {
-        // Add to sent announcements (for teacher)
-        const updatedSentAnnouncements = [newAnnouncement, ...state.sentAnnouncements];
-        
-        // Add to my announcements (for teacher)
-        const updatedAnnouncements = [newAnnouncement, ...state.announcements];
-        
-        // Add to course announcements
-        const courseAnnouncements = state.courseAnnouncements[courseId] || [];
-        const updatedCourseAnnouncements = {
-          ...state.courseAnnouncements,
-          [courseId]: [newAnnouncement, ...courseAnnouncements],
-        };
-        
-        return {
-          sentAnnouncements: updatedSentAnnouncements,
-          announcements: updatedAnnouncements,
-          courseAnnouncements: updatedCourseAnnouncements,
-          sending: false,
-          error: null,
-        };
-      });
-      
-      return newAnnouncement;
-    } catch (error) {
-      console.error('Failed to send announcement:', error);
-      const errorMessage = error.response?.data?.detail || 
-                         error.response?.data?.message || 
-                         'Failed to send announcement';
-      
-      set({ 
-        sending: false, 
-        error: errorMessage,
-      });
-      
-      throw error;
-    }
-  },
+  // Removed: sendAnnouncement - manual announcement sending no longer available
   
   /**
    * Mark an announcement as read (student only)
@@ -335,7 +273,6 @@ const useAnnouncementStore = create((set, get) => ({
       courseAnnouncements: {},
       loading: false,
       error: null,
-      sending: false,
       page: 1,
       hasMore: true,
     });

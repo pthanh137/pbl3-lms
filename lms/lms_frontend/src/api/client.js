@@ -76,6 +76,24 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
+    // Suppress 404 errors for optional endpoints (like /instructors/top/)
+    if (error.response?.status === 404) {
+      const url = error.config?.url || '';
+      // If it's a known optional endpoint, suppress the error silently
+      if (url.includes('/instructors/top/')) {
+        // Return a mock response to prevent console errors
+        return Promise.reject({
+          ...error,
+          response: {
+            ...error.response,
+            status: 404,
+            data: { instructors: [] }
+          },
+          silent: true // Flag to indicate this is a silent error
+        });
+      }
+    }
+
     // If error is NOT 401, reject immediately
     if (error.response?.status !== 401) {
       return Promise.reject(error);
@@ -364,14 +382,16 @@ export const getCourseCategories = () => api.get("/courses/categories/");
 // FIXED: Temporarily disable top instructors call if endpoint doesn't exist
 export const getTopInstructors = async (sort = 'students') => {
   try {
-    return await api.get(`/instructors/top/?sort=${sort}`);
+    const response = await api.get(`/instructors/top/?sort=${sort}`);
+    return response;
   } catch (error) {
-    // If 404, return empty array instead of throwing
-    if (error.response?.status === 404) {
-      console.warn('Top instructors endpoint not available');
-      return { data: [] };
+    // If 404 or silent error, return empty array instead of throwing
+    // Endpoint may not exist, fail silently
+    if (error.response?.status === 404 || error.silent) {
+      return { data: { instructors: [] } };
     }
-    throw error;
+    // For other errors, return empty array silently
+    return { data: { instructors: [] } };
   }
 };
 export const getTeacherTimeseries = (months = 6) =>
@@ -432,12 +452,22 @@ export const messagingAPI = {
 // ANNOUNCEMENT APIs
 // ============================================
 export const announcementAPI = {
-  sendAnnouncement: (data) => api.post('/announcements/send/', data),
+  // Removed: sendAnnouncement - manual sending no longer available
   getSentAnnouncements: () => api.get('/announcements/sent/'),
   getAnnouncementDetail: (id) => api.get(`/announcements/${id}/`),
   getCourseAnnouncements: (courseId) => api.get(`/announcements/course/${courseId}/`),
   getMyAnnouncements: () => api.get('/announcements/my/'),
   markAsRead: (announcementId) => api.patch(`/announcements/${announcementId}/mark-read/`),
+};
+
+// ============================================
+// NOTIFICATION APIs
+// ============================================
+export const notificationAPI = {
+  getNotifications: () => api.get('/notifications/'),
+  markAsRead: (notificationId) => api.patch(`/notifications/${notificationId}/read/`),
+  markAllRead: () => api.patch('/notifications/mark-all-read/'),
+  getUnreadCount: () => api.get('/notifications/unread-count/'),
 };
 
 // Export the stable axios instance
