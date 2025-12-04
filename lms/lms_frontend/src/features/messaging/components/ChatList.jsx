@@ -3,7 +3,7 @@ import useMessagingStore from '../store/messagingStore';
 import { formatRelativeTime } from '../utils/dateFormatter';
 
 const ChatList = () => {
-  const { conversations, activeUser, setActiveUser, loading, error } = useMessagingStore();
+  const { conversations, activeUser, setActiveUser, setCurrentConversation, loading, error } = useMessagingStore();
 
   useEffect(() => {
     const loadData = async () => {
@@ -12,44 +12,66 @@ const ChatList = () => {
     loadData();
   }, []); // Only run once on mount
 
-  const getPartnerName = (conversation) => {
-    const user = conversation.conversation_user || {};
-    return user.full_name || user.email || 'Unknown User';
+  const getConversationName = (conversation) => {
+    return conversation.name || 'Unknown';
   };
 
-  const getPartnerAvatar = (conversation) => {
-    const user = conversation.conversation_user || {};
-    return user.avatar_url;
-  };
-
-  const getPartnerRole = (conversation) => {
-    const user = conversation.conversation_user || {};
-    return user.role;
+  const getConversationAvatar = (conversation) => {
+    return conversation.avatar;
   };
 
   const getLastMessagePreview = (conversation) => {
-    if (!conversation.last_message) return 'No messages yet';
-    const content = conversation.last_message.content || '';
-    return content.length > 50
-      ? content.substring(0, 50) + '...'
-      : content;
+    return conversation.last_message_preview || 'No messages yet';
   };
 
   const getLastMessageTime = (conversation) => {
     if (conversation.last_message_time) {
       return formatRelativeTime(conversation.last_message_time);
     }
-    if (conversation.last_message?.sent_at) {
-      return formatRelativeTime(conversation.last_message.sent_at);
-    }
     return '';
   };
 
   const handleSelectConversation = (conversation) => {
-    const user = conversation.conversation_user;
-    if (user) {
-      setActiveUser(user);
+    console.log('handleSelectConversation called with:', conversation);
+    const store = useMessagingStore.getState();
+    
+    // Set current conversation (full object)
+    setCurrentConversation(conversation);
+    
+    // Clear other selections
+    store.setActiveGroup(null);
+    
+    // Also set activeUser/activeGroup for backward compatibility
+    if (conversation.type === 'direct') {
+      setActiveUser({
+        id: conversation.id,
+        full_name: conversation.name,
+        avatar_url: conversation.avatar,
+        role: 'user',
+      });
+    } else if (conversation.type === 'group') {
+      setActiveUser(null);
+      store.setActiveGroup({
+        id: conversation.id,
+        name: conversation.name,
+        course_thumbnail: conversation.avatar,
+      });
     }
+  };
+
+  const isSelected = (conversation) => {
+    const currentConversation = useMessagingStore.getState().currentConversation;
+    if (currentConversation) {
+      return currentConversation.id === conversation.id && currentConversation.type === conversation.type;
+    }
+    // Fallback to old logic for backward compatibility
+    if (conversation.type === 'direct') {
+      return activeUser?.id === conversation.id;
+    } else if (conversation.type === 'group') {
+      const activeGroup = useMessagingStore.getState().activeGroup;
+      return activeGroup?.id === conversation.id;
+    }
+    return false;
   };
 
   if (loading && conversations.length === 0) {
@@ -94,40 +116,42 @@ const ChatList = () => {
       </div>
       <div className="divide-y divide-gray-200">
         {conversations.map((conversation) => {
-          const user = conversation.conversation_user || {};
-          const isSelected = activeUser?.id === user.id;
-          const unreadCount = conversation.unread_count_for_current_user || 0;
-          const isOnline = conversation.is_online || false;
+          const selected = isSelected(conversation);
+          const unreadCount = conversation.unread_count || 0;
 
           return (
             <button
-              key={user.id}
+              key={`${conversation.type}-${conversation.id}`}
               onClick={() => handleSelectConversation(conversation)}
               className={`w-full p-4 text-left hover:bg-gray-50 transition-colors ${
-                isSelected ? 'bg-blue-50 border-l-4 border-blue-500' : ''
+                selected ? 'bg-blue-50 border-l-4 border-blue-500' : ''
               }`}
             >
               <div className="flex items-start space-x-3">
                 <div className="flex-shrink-0 relative">
-                  {getPartnerAvatar(conversation) ? (
+                  {getConversationAvatar(conversation) ? (
                     <img
-                      src={getPartnerAvatar(conversation)}
-                      alt={getPartnerName(conversation)}
+                      src={getConversationAvatar(conversation)}
+                      alt={getConversationName(conversation)}
                       className="w-12 h-12 rounded-full object-cover"
+                      onError={(e) => {
+                        e.target.style.display = 'none';
+                        e.target.nextSibling.style.display = 'flex';
+                      }}
                     />
-                  ) : (
-                    <div className="w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold">
-                      {getPartnerName(conversation).charAt(0).toUpperCase()}
-                    </div>
-                  )}
-                  {isOnline && (
-                    <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 border-2 border-white rounded-full"></div>
-                  )}
+                  ) : null}
+                  <div 
+                    className={`w-12 h-12 rounded-full bg-blue-500 flex items-center justify-center text-white font-semibold ${
+                      getConversationAvatar(conversation) ? 'hidden' : ''
+                    }`}
+                  >
+                    {getConversationName(conversation).charAt(0).toUpperCase()}
+                  </div>
                 </div>
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center justify-between">
-                    <p className={`text-sm font-medium ${isSelected ? 'text-blue-600' : 'text-gray-900'}`}>
-                      {getPartnerName(conversation)}
+                    <p className={`text-sm font-medium ${selected ? 'text-blue-600' : 'text-gray-900'}`}>
+                      {getConversationName(conversation)}
                     </p>
                     {getLastMessageTime(conversation) && (
                       <p className="text-xs text-gray-500 flex-shrink-0 ml-2">
@@ -145,11 +169,11 @@ const ChatList = () => {
                       </span>
                     )}
                   </div>
-                  {getPartnerRole(conversation) && (
-                    <p className="text-xs text-gray-400 mt-1 capitalize">
-                      {getPartnerRole(conversation)}
-                    </p>
-                  )}
+                  <div className="flex items-center justify-between mt-1">
+                    <span className="text-xs text-gray-400 capitalize">
+                      {conversation.type === 'group' ? 'Group' : 'Direct'}
+                    </span>
+                  </div>
                 </div>
               </div>
             </button>

@@ -52,10 +52,16 @@ const TeacherQuizSubmissionDetail = () => {
   };
 
   const formatTime = (seconds) => {
-    if (!seconds) return 'N/A';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}m ${secs}s`;
+    if (!seconds || seconds < 0) return '0 min';
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    if (minutes === 0) {
+      return `${remainingSeconds}s`;
+    }
+    if (remainingSeconds === 0) {
+      return `${minutes} min`;
+    }
+    return `${minutes}m ${remainingSeconds}s`;
   };
 
   if (loading) {
@@ -122,7 +128,7 @@ const TeacherQuizSubmissionDetail = () => {
             <div>
               <div className="text-sm text-gray-500">Time Spent</div>
               <div className="text-2xl font-bold text-gray-900 mt-1">
-                {formatTime(submission.time_spent)}
+                {formatTime(submission.time_spent_seconds || submission.time_spent)}
               </div>
             </div>
             <div>
@@ -188,3 +194,4 @@ const TeacherQuizSubmissionDetail = () => {
 };
 
 export default TeacherQuizSubmissionDetail;
+

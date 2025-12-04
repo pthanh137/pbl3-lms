@@ -200,6 +200,8 @@ class TeacherQuizSubmissionSerializer(serializers.ModelSerializer):
     correct_answers = serializers.SerializerMethodField()
     total_questions = serializers.SerializerMethodField()
     time_spent_minutes = serializers.SerializerMethodField()
+    time_spent = serializers.SerializerMethodField()  # Add time_spent in seconds
+    time_spent_seconds = serializers.IntegerField(read_only=True, allow_null=True)  # Use property from model, can be null
     submitted_at = serializers.SerializerMethodField()
     
     class Meta:
@@ -212,6 +214,8 @@ class TeacherQuizSubmissionSerializer(serializers.ModelSerializer):
             'correct_answers',
             'total_questions',
             'time_spent_minutes',
+            'time_spent',  # Add time_spent in seconds
+            'time_spent_seconds',  # Use property from model
             'submitted_at',
         ]
         read_only_fields = ['id', 'score']
@@ -243,13 +247,41 @@ class TeacherQuizSubmissionSerializer(serializers.ModelSerializer):
             return 0
     
     def get_time_spent_minutes(self, obj):
-        """Calculate time spent in minutes."""
+        """Calculate time spent in minutes using start_time and end_time."""
         try:
-            if obj.completed_at and obj.started_at:
-                delta = obj.completed_at - obj.started_at
-                total_seconds = delta.total_seconds()
+            # Use start_time and end_time if available, otherwise fallback to started_at and completed_at
+            if obj.start_time and obj.end_time:
+                # Ensure we subtract start from end (not reversed)
+                delta = obj.end_time - obj.start_time
+                total_seconds = max(delta.total_seconds(), 0)  # Never negative
                 minutes = round(total_seconds / 60, 1)
                 return float(minutes)
+            elif obj.completed_at and obj.started_at:
+                # Fallback to old fields if new fields are not set
+                delta = obj.completed_at - obj.started_at
+                total_seconds = max(delta.total_seconds(), 0)  # Never negative
+                minutes = round(total_seconds / 60, 1)
+                return float(minutes)
+            # Return None if no time data available
+            return None
+        except Exception:
+            return None
+    
+    def get_time_spent(self, obj):
+        """Calculate time spent in seconds using start_time and end_time."""
+        try:
+            # Use start_time and end_time if available, otherwise fallback to started_at and completed_at
+            if obj.start_time and obj.end_time:
+                # Ensure we subtract start from end (not reversed)
+                delta = obj.end_time - obj.start_time
+                total_seconds = max(delta.total_seconds(), 0)  # Never negative
+                return int(total_seconds)
+            elif obj.completed_at and obj.started_at:
+                # Fallback to old fields if new fields are not set
+                delta = obj.completed_at - obj.started_at
+                total_seconds = max(delta.total_seconds(), 0)  # Never negative
+                return int(total_seconds)
+            # Return None if no time data available (not 0)
             return None
         except Exception:
             return None

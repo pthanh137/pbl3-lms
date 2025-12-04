@@ -24,16 +24,22 @@ class Message(models.Model):
         help_text="Optional: message belongs to a course context"
     )
     content = models.TextField()
-    sent_at = models.DateTimeField(auto_now_add=True)
+    sent_at = models.DateTimeField(auto_now_add=True, db_index=True)
     is_read = models.BooleanField(default=False)
     
     class Meta:
         db_table = 'messages'
-        ordering = ['-sent_at']
+        ordering = ['-sent_at']  # Order by sent_at (most recent first)
         indexes = [
             models.Index(fields=['sender', 'receiver']),
             models.Index(fields=['receiver', 'is_read']),
+            models.Index(fields=['sent_at']),
         ]
+    
+    @property
+    def created_at(self):
+        """Alias for sent_at for consistency with GroupMessage."""
+        return self.sent_at
     
     def __str__(self):
         return f"{self.sender.email} -> {self.receiver.email} ({self.sent_at})"

@@ -58,17 +58,30 @@ const NotificationBell = () => {
   }, [isOpen, isAuthenticated, loadNotifications]);
 
   const handleNotificationClick = async (notification) => {
-    // Mark as read if unread
+    // Mark as read if unread - this will update the store and badge instantly
     if (!notification.is_read) {
       await markRead(notification.id);
+      // Refresh notifications list to get updated state
+      await loadNotifications();
+      // Sync unread count
+      await syncUnreadCount();
     }
     
     // Navigate to target_url if available, otherwise fallback to course
     if (notification.target_url) {
-      navigate(notification.target_url);
+      // Check if target_url is a quiz take page, redirect to quiz-start instead
+      const quizTakeMatch = notification.target_url.match(/\/courses\/(\d+)\/quizzes\/(\d+)\/take/);
+      if (quizTakeMatch) {
+        const [, , quizId] = quizTakeMatch;
+        navigate(`/quiz-start/${quizId}`);
+      } else {
+        navigate(notification.target_url);
+      }
     } else if (notification.course?.id) {
       // Fallback navigation based on notification type
       if (notification.notification_type?.includes('quiz')) {
+        // For quiz notifications, try to extract quizId from message or use course quizzes list
+        // For now, redirect to course quizzes list
         navigate(`/courses/${notification.course.id}/quizzes`);
       } else if (notification.notification_type?.includes('assignment')) {
         navigate(`/courses/${notification.course.id}/assignments`);
@@ -121,7 +134,7 @@ const NotificationBell = () => {
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9" />
         </svg>
         {unreadCount > 0 && (
-          <span className="absolute top-0 right-0 bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+          <span className="absolute top-0 right-0 bg-blue-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
             {unreadCount > 9 ? '9+' : unreadCount}
           </span>
         )}
@@ -157,39 +170,49 @@ const NotificationBell = () => {
               </div>
             ) : (
               <div className="divide-y divide-slate-100">
-                {recentNotifications.map((notification) => (
-                  <button
-                    key={notification.id}
-                    onClick={() => handleNotificationClick(notification)}
-                    className={`w-full text-left p-4 hover:bg-slate-50 transition-colors ${
-                      !notification.is_read ? 'bg-primary-50' : ''
-                    }`}
-                  >
-                    <div className="flex items-start gap-3">
-                      <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-2 ${
-                        !notification.is_read ? 'bg-primary-500' : 'bg-transparent'
-                      }`}></div>
-                      <div className="flex-1 min-w-0">
-                        <p className={`text-sm font-medium ${
-                          !notification.is_read ? 'text-slate-900' : 'text-slate-700'
-                        }`}>
-                          {notification.title}
-                        </p>
-                        <p className="text-xs text-slate-500 mt-1 line-clamp-2">
-                          {notification.message}
-                        </p>
-                        {notification.course && (
-                          <p className="text-xs text-slate-400 mt-1">
-                            {notification.course.title}
+                {recentNotifications.map((notification) => {
+                  const isUnread = !notification.is_read;
+                  return (
+                    <button
+                      key={notification.id}
+                      onClick={() => handleNotificationClick(notification)}
+                      className={`w-full text-left p-4 hover:bg-slate-50 transition-colors ${
+                        isUnread ? 'bg-blue-50' : 'bg-white opacity-75'
+                      }`}
+                    >
+                      <div className="flex items-start gap-3">
+                        {/* Blue dot for unread */}
+                        <div className={`flex-shrink-0 w-2 h-2 rounded-full mt-2 ${
+                          isUnread ? 'bg-blue-500' : 'bg-transparent'
+                        }`}></div>
+                        <div className="flex-1 min-w-0">
+                          <p className={`text-sm font-medium ${
+                            isUnread ? 'text-slate-900' : 'text-slate-500'
+                          }`}>
+                            {notification.title}
                           </p>
-                        )}
-                        <p className="text-xs text-slate-400 mt-1">
-                          {formatRelativeTime(notification.created_at)}
-                        </p>
+                          <p className={`text-xs mt-1 line-clamp-2 ${
+                            isUnread ? 'text-slate-600' : 'text-slate-400'
+                          }`}>
+                            {notification.message}
+                          </p>
+                          {notification.course && (
+                            <p className={`text-xs mt-1 ${
+                              isUnread ? 'text-slate-500' : 'text-slate-400'
+                            }`}>
+                              {notification.course.title}
+                            </p>
+                          )}
+                          <p className={`text-xs mt-1 ${
+                            isUnread ? 'text-slate-500' : 'text-slate-400'
+                          }`}>
+                            {formatRelativeTime(notification.created_at)}
+                          </p>
+                        </div>
                       </div>
-                    </div>
-                  </button>
-                ))}
+                    </button>
+                  );
+                })}
               </div>
             )}
           </div>

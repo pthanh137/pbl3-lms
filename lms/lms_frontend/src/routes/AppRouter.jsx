@@ -13,6 +13,7 @@ import CourseEditor from '../pages/CourseEditor';
 import TeacherCourseQuizzes from '../pages/TeacherCourseQuizzes';
 import QuizEditor from '../pages/QuizEditor';
 import StudentQuizPlayer from '../pages/StudentQuizPlayer';
+import QuizStartPage from '../pages/QuizStartPage';
 import AssignmentDetail from '../pages/AssignmentDetail';
 import StudentAssignmentDetail from '../pages/StudentAssignmentDetail';
 import TeacherCourseAssignments from '../pages/TeacherCourseAssignments';
@@ -355,6 +356,15 @@ const AppRouter = () => {
             <TeacherRoute>
               <TeacherAssignmentSubmissions />
             </TeacherRoute>
+          }
+        />
+        {/* Quiz Start Page */}
+        <Route
+          path="/quiz-start/:quizId"
+          element={
+            <ProtectedRoute>
+              <QuizStartPage />
+            </ProtectedRoute>
           }
         />
         {/* Student Quiz Player */}

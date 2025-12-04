@@ -439,8 +439,10 @@ export const messagingAPI = {
     api.get('/messages/conversation/', { params: { user1: user1Id, user2: user2Id, page } }),
   getUnreadMessages: (userId) => 
     api.get('/messages/unread/', { params: { user_id: userId } }),
+  getUnreadCount: () => 
+    api.get('/messages/unread-count/'),
   markAsRead: (messageId) => 
-    api.patch(`/messages/mark-read/${messageId}/`),
+    api.patch(`/messages/${messageId}/read/`),
   getConversationsList: () => 
     api.get('/messages/conversations/'),
   getAvailableContacts: () => 
@@ -479,8 +481,8 @@ export const announcementAPI = {
 // ============================================
 export const notificationAPI = {
   getNotifications: () => api.get('/notifications/'),
-  markAsRead: (notificationId) => api.patch(`/notifications/${notificationId}/read/`),
-  markAllRead: () => api.patch('/notifications/mark-all-read/'),
+  markAsRead: (notificationId) => api.post(`/notifications/${notificationId}/read/`),
+  markAllRead: () => api.post('/notifications/mark-all-read/'),
   getUnreadCount: () => api.get('/notifications/unread-count/'),
 };
 

@@ -13,13 +13,15 @@ from .views import (
     send_group_message,
     UserCourseGroups,
     GroupMembersAPIView,
+    get_unread_count,
 )
 
 urlpatterns = [
     path('messages/send/', SendMessageAPIView.as_view(), name='message-send'),
     path('messages/conversation/', get_conversation, name='message-conversation'),
     path('messages/unread/', get_unread_messages, name='message-unread'),
-    path('messages/mark-read/<int:message_id>/', mark_message_read, name='message-mark-read'),
+    path('messages/unread-count/', get_unread_count, name='message-unread-count'),
+    path('messages/<int:message_id>/read/', mark_message_read, name='message-mark-read'),
     path('messages/conversations/', get_conversations_list, name='message-conversations'),
     path('messages/contacts/', get_available_contacts, name='message-contacts'),
     path('messages/typing/', typing_indicator, name='message-typing'),

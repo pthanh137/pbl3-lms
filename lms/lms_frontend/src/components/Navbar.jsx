@@ -51,16 +51,16 @@ const Navbar = () => {
     }
   }, [isAuthenticated, user, location.pathname]);
 
-  // Fetch unread messages count
+  // Fetch unread messages count - poll every 5 seconds
   useEffect(() => {
     if (isAuthenticated) {
       loadConversations();
       refreshUnreadCount();
-      // Refresh every 30 seconds
+      // Refresh every 5 seconds (as per requirements)
       const interval = setInterval(() => {
         refreshUnreadCount();
         loadConversations();
-      }, 30000);
+      }, 5000);
       return () => clearInterval(interval);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

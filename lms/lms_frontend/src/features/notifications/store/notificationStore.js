@@ -73,7 +73,7 @@ const useNotificationStore = create((set, get) => ({
     try {
       await notificationAPI.markAsRead(notificationId);
       
-      // Update local state
+      // Update local state instantly
       set((state) => {
         const updatedNotifications = state.notifications.map(notif => {
           if (notif.id === notificationId) {
@@ -89,6 +89,11 @@ const useNotificationStore = create((set, get) => ({
           unreadCount,
         };
       });
+      
+      // Also sync unread count from server to ensure accuracy
+      setTimeout(() => {
+        get().syncUnreadCount();
+      }, 100);
     } catch (error) {
       console.error('Failed to mark notification as read:', error);
       throw error;
@@ -102,11 +107,16 @@ const useNotificationStore = create((set, get) => ({
     try {
       await notificationAPI.markAllRead();
       
-      // Update local state
+      // Update local state instantly
       set((state) => ({
         notifications: state.notifications.map(notif => ({ ...notif, is_read: true })),
         unreadCount: 0,
       }));
+      
+      // Also sync unread count from server to ensure accuracy
+      setTimeout(() => {
+        get().syncUnreadCount();
+      }, 100);
     } catch (error) {
       console.error('Failed to mark all notifications as read:', error);
       throw error;

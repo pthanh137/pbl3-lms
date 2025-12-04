@@ -15,8 +15,9 @@ const useMessagingStore = create((set, get) => ({
   // ============================================
   conversations: [],
   messages: [],
-  activeUser: null, // Currently selected conversation partner
-  activeGroup: null, // Currently selected group
+  currentConversation: null, // Currently selected conversation (full object)
+  activeUser: null, // Currently selected conversation partner (for backward compatibility)
+  activeGroup: null, // Currently selected group (for backward compatibility)
   groupMessages: [], // Messages for active group
   groupPage: 1,
   groupHasMore: true,
@@ -45,6 +46,153 @@ const useMessagingStore = create((set, get) => ({
   // ACTIONS
   // ============================================
 
+  setCurrentConversation: (conv) => {
+    console.log("SET CONVERSATION >>>", conv);
+    set({ 
+      currentConversation: conv,
+      messages: [], // Clear messages when switching conversations
+      page: 1,
+      hasMore: true,
+      loading: false,
+      loadError: null,
+      authError: null,
+      toastMessage: null,
+    });
+    
+    // Also update activeUser/activeGroup for backward compatibility
+    if (conv) {
+      if (conv.type === 'direct') {
+        set({ 
+          activeUser: {
+            id: conv.id,
+            full_name: conv.name,
+            avatar_url: conv.avatar,
+            role: 'user',
+          },
+          activeGroup: null,
+        });
+      } else if (conv.type === 'group') {
+        set({ 
+          activeGroup: {
+            id: conv.id,
+            name: conv.name,
+            course_thumbnail: conv.avatar,
+          },
+          activeUser: null,
+        });
+      }
+    } else {
+      set({ activeUser: null, activeGroup: null });
+    }
+  },
+
+  fetchMessages: async (conversationId, conversationType) => {
+    // Check authentication
+    if (!get().isAuthenticated()) {
+      set({ authError: 'User not authenticated' });
+      return;
+    }
+
+    // Get current user ID
+    const storedUser = localStorage.getItem('user');
+    if (!storedUser) {
+      set({ authError: 'User not authenticated' });
+      return;
+    }
+    
+    let user;
+    try {
+      user = JSON.parse(storedUser);
+    } catch (e) {
+      set({ authError: 'User not authenticated' });
+      return;
+    }
+    
+    if (!user?.id) {
+      set({ authError: 'User not authenticated' });
+      return;
+    }
+
+    // Set appropriate loading state based on conversation type
+    if (conversationType === 'group') {
+      set({ groupLoading: true, loadError: null, authError: null });
+    } else {
+      set({ loading: true, loadError: null, authError: null });
+    }
+
+    try {
+      let response;
+      
+      if (conversationType === 'direct') {
+        // For direct messages, use getConversation API
+        response = await messagingAPI.getConversation(user.id, conversationId, 1);
+        const data = response.data;
+        const newMessages = Array.isArray(data) ? data : (data.results || []);
+        const hasMore = data.next ? true : false;
+
+        set({
+          messages: newMessages,
+          page: 1,
+          hasMore,
+          loading: false,
+          authError: null,
+          loadError: null,
+        });
+
+        // Mark messages as read for direct conversations
+        const unreadMessages = newMessages.filter(
+          m => !m.is_read && m.receiver?.id === user.id
+        );
+        
+        if (unreadMessages.length > 0) {
+          const markPromises = unreadMessages.map(msg => 
+            messagingAPI.markAsRead(msg.id).catch((err) => {
+              console.error(`Failed to mark message ${msg.id} as read:`, err);
+              return null;
+            })
+          );
+          
+          Promise.all(markPromises).then(() => {
+            // Refresh conversations to update unread count
+            setTimeout(() => {
+              get().loadConversations();
+            }, 500);
+          });
+        }
+      } else if (conversationType === 'group') {
+        // For group messages, use getGroupMessages API
+        response = await messagingAPI.getGroupMessages(conversationId, 1);
+        const data = response.data;
+        const newMessages = Array.isArray(data) ? data : (data.results || []);
+        const hasMore = data.next ? true : false;
+
+        set({
+          groupMessages: newMessages,
+          groupPage: 1,
+          groupHasMore: hasMore,
+          groupLoading: false,
+          authError: null,
+          loadError: null,
+        });
+      } else {
+        throw new Error('Invalid conversation type');
+      }
+    } catch (error) {
+      console.error('Failed to fetch messages:', error);
+      if (conversationType === 'group') {
+        set({
+          loadError: error.response?.data?.detail || 'Failed to load messages',
+          groupLoading: false,
+        });
+      } else {
+        set({
+          loadError: error.response?.data?.detail || 'Failed to load messages',
+          loading: false,
+        });
+      }
+    }
+  },
+
   setActiveUser: (user) => {
     // Clear errors when selecting a new conversation
     set({ 
@@ -55,10 +203,14 @@ const useMessagingStore = create((set, get) => ({
       loadError: null, // Clear load error on new conversation
       authError: null, // Clear auth error on new conversation
       toastMessage: null, // Clear toast on new conversation
+      loading: false, // Reset loading state
     });
-    if (user) {
+    if (user && user.id) {
       // Load messages and mark as read when opening conversation
-      get().loadMessages(user.id, 1, true); // Replace messages on new conversation
+      // Use setTimeout to ensure state is updated first
+      setTimeout(() => {
+        get().loadMessages(user.id, 1, true); // Replace messages on new conversation
+      }, 0);
     }
   },
 
@@ -81,14 +233,21 @@ const useMessagingStore = create((set, get) => ({
       const response = await messagingAPI.getConversationsList();
       const conversations = response.data || [];
       
-      // Calculate total unread count
-      const totalUnread = conversations.reduce(
-        (sum, conv) => sum + (conv.unread_count_for_current_user || 0), 
+      // Sort by last_message_time (newest first) - backend already sorts, but ensure it
+      const sortedConversations = [...conversations].sort((a, b) => {
+        const timeA = a.last_message_time ? new Date(a.last_message_time).getTime() : 0;
+        const timeB = b.last_message_time ? new Date(b.last_message_time).getTime() : 0;
+        return timeB - timeA;
+      });
+      
+      // Calculate total unread count (use unread_count field from new format)
+      const totalUnread = sortedConversations.reduce(
+        (sum, conv) => sum + (conv.unread_count || 0), 
         0
       );
       
       set({ 
-        conversations, 
+        conversations: sortedConversations, 
         unreadCount: totalUnread,
         loading: false,
         authError: null, // Clear auth error on success
@@ -125,6 +284,33 @@ const useMessagingStore = create((set, get) => ({
       }
     }
   },
+  
+  // Update conversation in list (move to top when new message arrives)
+  updateConversation: (updatedConv) => {
+    set((state) => {
+      // Remove old conversation and add updated one at top
+      const filtered = state.conversations.filter(
+        c => !(c.id === updatedConv.id && c.type === updatedConv.type)
+      );
+      // Sort all conversations by last_message_time
+      const allConversations = [updatedConv, ...filtered].sort((a, b) => {
+        const timeA = a.last_message_time ? new Date(a.last_message_time).getTime() : 0;
+        const timeB = b.last_message_time ? new Date(b.last_message_time).getTime() : 0;
+        return timeB - timeA;
+      });
+      
+      // Recalculate unread count
+      const totalUnread = allConversations.reduce(
+        (sum, conv) => sum + (conv.unread_count || 0), 
+        0
+      );
+      
+      return {
+        conversations: allConversations,
+        unreadCount: totalUnread,
+      };
+    });
+  },
 
   loadMessages: async (partnerId, pageNum = 1, replace = false) => {
     // Check authentication BEFORE making request
@@ -160,9 +346,14 @@ const useMessagingStore = create((set, get) => ({
     const { activeUser } = get();
     
     // Only load if activeUser matches (unless replacing)
+    // When replacing (initial load), always load regardless of activeUser match
     if (!replace && activeUser?.id !== partnerId) {
+      console.log('Skipping loadMessages: activeUser mismatch', { activeUserId: activeUser?.id, partnerId });
       return;
     }
+    
+    // Log for debugging
+    console.log('Loading messages for partner:', partnerId, { replace, activeUserId: activeUser?.id });
 
     // Don't show loading if we're just polling for new messages
     const isPolling = get().pollingInterval !== null;
@@ -249,8 +440,32 @@ const useMessagingStore = create((set, get) => ({
               })
             }));
             
-            // Refresh conversations list to update unread count
-            // Use a delay to ensure backend has processed all mark-as-read requests
+            // Update conversations list to update unread count
+            // Update the specific conversation's unread count immediately
+            set((state) => {
+              const updatedConversations = state.conversations.map(conv => {
+                if (conv.type === 'direct' && conv.id === activeUser?.id) {
+                  return {
+                    ...conv,
+                    unread_count: 0, // All messages marked as read
+                  };
+                }
+                return conv;
+              });
+              
+              // Recalculate total unread count
+              const totalUnread = updatedConversations.reduce(
+                (sum, conv) => sum + (conv.unread_count || 0), 
+                0
+              );
+              
+              return {
+                conversations: updatedConversations,
+                unreadCount: totalUnread,
+              };
+            });
+            
+            // Also refresh conversations list after a delay to ensure backend sync
             setTimeout(() => {
               get().loadConversations();
             }, 500);
@@ -426,16 +641,17 @@ const useMessagingStore = create((set, get) => ({
         };
       });
       
-      // Refresh conversations list (don't await to avoid blocking)
-      // Use a longer delay to avoid race conditions with backend processing
-      // If it fails, it's not critical - user can manually refresh
-      setTimeout(() => {
-        get().loadConversations().catch((error) => {
-          // Silently fail - don't show error to user after successful message send
-          // The conversation will be updated on next poll or manual refresh
-          console.warn('Failed to refresh conversations after sending message (non-critical):', error);
-        });
-      }, 500); // Increased delay to give backend time to process
+      // Immediately update conversations list with conversation_info from backend
+      if (newMessage.conversation_info) {
+        get().updateConversation(newMessage.conversation_info);
+      } else {
+        // Fallback: refresh conversations list if conversation_info not available
+        setTimeout(() => {
+          get().loadConversations().catch((error) => {
+            console.warn('Failed to refresh conversations after sending message (non-critical):', error);
+          });
+        }, 500);
+      }
       
       // Stop typing indicator
       get().postTypingStatus(activeUser.id, false);
@@ -597,15 +813,28 @@ const useMessagingStore = create((set, get) => ({
         return;
       }
 
-      const { activeUser, loadConversations, loadMessages } = get();
+      const { currentConversation, activeUser, loadConversations, fetchMessages } = get();
       
-      // Always load conversations (updates unread counts)
+      // Always load conversations (updates unread counts and sorts by latest message)
       loadConversations();
       
-      // ONLY poll for messages if there's an active conversation
-      if (activeUser) {
-        // Poll for new messages (silent update, no replace, no loading state)
-        loadMessages(activeUser.id, 1, false);
+      // Poll for new messages if there's an active conversation
+      if (currentConversation) {
+        // Poll for new messages (silent update)
+        fetchMessages(currentConversation.id, currentConversation.type);
+      } else if (activeUser) {
+        // Fallback: poll for direct messages if activeUser exists (backward compatibility)
+        const storedUser = localStorage.getItem('user');
+        if (storedUser) {
+          try {
+            const user = JSON.parse(storedUser);
+            if (user?.id) {
+              get().loadMessages(activeUser.id, 1, false);
+            }
+          } catch (e) {
+            // Ignore parse errors
+          }
+        }
       }
     }, 4000); // Poll every 4 seconds
 
@@ -621,9 +850,12 @@ const useMessagingStore = create((set, get) => ({
         return;
       }
 
-      const { activeUser, checkTypingStatus } = get();
-      // ONLY poll for typing if there's an active conversation
-      if (activeUser) {
+      const { currentConversation, activeUser, checkTypingStatus } = get();
+      // ONLY poll for typing if there's an active direct conversation
+      if (currentConversation?.type === 'direct' && currentConversation.id) {
+        checkTypingStatus(currentConversation.id);
+      } else if (activeUser) {
+        // Fallback for backward compatibility
         checkTypingStatus(activeUser.id);
       }
     }, typingIntervalMs); // Poll typing every 6-8 seconds (randomized)
@@ -652,21 +884,9 @@ const useMessagingStore = create((set, get) => ({
       return;
     }
 
-    const storedUser = localStorage.getItem('user');
-    if (!storedUser) return;
-    
-    let user;
     try {
-      user = JSON.parse(storedUser);
-    } catch (e) {
-      return;
-    }
-    
-    if (!user?.id) return;
-
-    try {
-      const response = await messagingAPI.getUnreadMessages(user.id);
-      set({ unreadCount: response.data?.count || 0 });
+      const response = await messagingAPI.getUnreadCount();
+      set({ unreadCount: response.data?.unread || 0 });
     } catch (error) {
       // Silently fail for unread count - don't set errors
       console.error('Failed to refresh unread count:', error);
@@ -770,9 +990,12 @@ const useMessagingStore = create((set, get) => ({
   },
 
   sendGroupMessage: async (content) => {
-    const { activeGroup } = get();
+    const { activeGroup, currentConversation } = get();
     
-    if (!activeGroup || !content.trim()) {
+    // Use currentConversation if available, fallback to activeGroup
+    const group = currentConversation?.type === 'group' ? currentConversation : activeGroup;
+    
+    if (!group || !content.trim()) {
       throw new Error('No active group or empty message');
     }
 
@@ -782,13 +1005,18 @@ const useMessagingStore = create((set, get) => ({
     }
 
     try {
-      const response = await messagingAPI.sendGroupMessage(activeGroup.id, content.trim());
+      const response = await messagingAPI.sendGroupMessage(group.id, content.trim());
       const newMessage = response.data;
       
       // Add message to groupMessages
       set((state) => ({
         groupMessages: [...state.groupMessages, newMessage],
       }));
+      
+      // Update conversations list to move group to top (sorted by latest message)
+      setTimeout(() => {
+        get().loadConversations();
+      }, 500);
       
       return newMessage;
     } catch (error) {

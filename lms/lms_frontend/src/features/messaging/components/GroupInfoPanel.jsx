@@ -174,3 +174,4 @@ export default function GroupInfoPanel({ groupId, groupName, memberCount }) {
   );
 }
 
+

@@ -10,7 +10,7 @@ import StudentProfileModal from '../components/StudentProfileModal';
  * Displays all quiz submissions (results) for a specific quiz.
  * Route: /teacher/quizzes/:quizId/results
  */
-const TeacherQuizResults = () => {
+function TeacherQuizResults() {
   const { quizId } = useParams();
   const navigate = useNavigate();
   const { user, isAuthenticated } = useAuth();
@@ -79,6 +79,13 @@ const TeacherQuizResults = () => {
     const mins = Math.floor(seconds / 60);
     const secs = seconds % 60;
     return `${mins}m ${secs}s`;
+  };
+
+  const formatTimeSpent = (seconds) => {
+    // Handle null, undefined, or invalid values
+    if (seconds === null || seconds === undefined || seconds <= 0) return '0 min';
+    const minutes = Math.round(seconds / 60);
+    return `${minutes} min`;
   };
 
   const formatDate = (dateString) => {
@@ -216,9 +223,7 @@ const TeacherQuizResults = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
-                        {submission.time_spent_minutes != null
-                          ? `${submission.time_spent_minutes} min`
-                          : 'N/A'}
+                        {formatTimeSpent(submission.time_spent_seconds || submission.time_spent || (submission.time_spent_minutes ? submission.time_spent_minutes * 60 : null))}
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
                         {formatDate(submission.submitted_at || submission.completed_at)}
@@ -254,3 +259,4 @@ const TeacherQuizResults = () => {
 };
 
 export default TeacherQuizResults;
+

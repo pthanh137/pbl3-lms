@@ -2,6 +2,7 @@ import React, { useEffect, useRef, useCallback, useMemo } from 'react';
 import useMessagingStore from '../store/messagingStore';
 import { useAuth } from '../../../context/AuthContext';
 import MessageInput from './MessageInput';
+import GroupMessageInput from './GroupMessageInput';
 import { formatTime, formatDate } from '../utils/dateFormatter';
 
 // ============================================
@@ -19,14 +20,26 @@ const ChatWindow = () => {
   // ============================================
   
   // Store subscriptions - ALL called unconditionally
+  const currentConversation = useMessagingStore((state) => state.currentConversation);
   const activeUser = useMessagingStore((state) => state.activeUser);
   const activeUserId = activeUser?.id ?? null;
   const messages = useMessagingStore((state) => state.messages);
+  const groupMessages = useMessagingStore((state) => state.groupMessages);
   const loading = useMessagingStore((state) => state.loading);
+  const groupLoading = useMessagingStore((state) => state.groupLoading);
   const loadError = useMessagingStore((state) => state.loadError);
   const hasMore = useMessagingStore((state) => state.hasMore);
+  const groupHasMore = useMessagingStore((state) => state.groupHasMore);
   const loadOlderMessages = useMessagingStore((state) => state.loadOlderMessages);
+  const loadOlderGroupMessages = useMessagingStore((state) => state.loadOlderGroupMessages);
+  const fetchMessages = useMessagingStore((state) => state.fetchMessages);
   const toastMessage = useMessagingStore((state) => state.toastMessage);
+  
+  // Determine which messages/loading state to use based on conversation type
+  const displayMessages = currentConversation?.type === 'group' ? groupMessages : messages;
+  const displayLoading = currentConversation?.type === 'group' ? groupLoading : loading;
+  const displayHasMore = currentConversation?.type === 'group' ? groupHasMore : hasMore;
+  const displayLoadOlder = currentConversation?.type === 'group' ? loadOlderGroupMessages : loadOlderMessages;
   
   // Typing state - always call hook, condition inside selector
   const typingState = useMessagingStore((state) => {
@@ -42,7 +55,7 @@ const ChatWindow = () => {
   const chatContainerRef = useRef(null);
   const isLoadingOlder = useRef(false);
   const prevActiveUserIdRef = useRef(activeUserId);
-  const prevMessageCountRef = useRef(messages.length);
+  const prevMessageCountRef = useRef(displayMessages.length);
   
   // ============================================
   // CALLBACKS - useCallback at top level
@@ -57,31 +70,33 @@ const ChatWindow = () => {
   }, []);
   
   // Handle scroll callback - stable reference
+  // Use displayHasMore and displayLoadOlder which adapt to conversation type
   const handleScroll = useCallback((e) => {
     const container = e.target;
-    if (container.scrollTop === 0 && hasMore && !isLoadingOlder.current) {
+    if (container.scrollTop === 0 && displayHasMore && !isLoadingOlder.current) {
       isLoadingOlder.current = true;
-      loadOlderMessages().finally(() => {
+      displayLoadOlder().finally(() => {
         isLoadingOlder.current = false;
       });
     }
-  }, [hasMore, loadOlderMessages]);
+  }, [displayHasMore, displayLoadOlder]);
   
   // Handle load older messages click - stable reference
+  // Use displayLoadOlder which adapts to conversation type
   const handleLoadOlder = useCallback(() => {
     if (isLoadingOlder.current) return;
     isLoadingOlder.current = true;
-    loadOlderMessages().finally(() => {
+    displayLoadOlder().finally(() => {
       isLoadingOlder.current = false;
     });
-  }, [loadOlderMessages]);
+  }, [displayLoadOlder]);
   
   // Handle retry - stable reference
   const handleRetry = useCallback(() => {
-    if (activeUserId) {
-      useMessagingStore.getState().loadMessages(activeUserId, 1, true);
+    if (currentConversation?.id && currentConversation?.type) {
+      fetchMessages(currentConversation.id, currentConversation.type);
     }
-  }, [activeUserId]);
+  }, [currentConversation?.id, currentConversation?.type, fetchMessages]);
   
   // Helper function for grouping messages - stable reference
   const groupMessagesByDate = useCallback((msgs) => {
@@ -90,9 +105,11 @@ const ChatWindow = () => {
     let currentGroup = [];
 
     msgs.forEach((message) => {
-      if (!message.sent_at) return;
+      // Handle both direct messages (sent_at) and group messages (created_at)
+      const messageTime = message.sent_at || message.created_at;
+      if (!messageTime) return;
       
-      const messageDate = new Date(message.sent_at).toDateString();
+      const messageDate = new Date(messageTime).toDateString();
       
       if (messageDate !== currentDate) {
         if (currentGroup.length > 0) {
@@ -118,16 +135,22 @@ const ChatWindow = () => {
   
   // Memoize message groups - always computed
   // This ensures UI re-renders when messages change
+  // Use displayMessages which handles both direct and group conversations
   const messageGroups = useMemo(() => {
-    if (!messages || messages.length === 0) return [];
-    return groupMessagesByDate(messages);
-  }, [messages, groupMessagesByDate]);
+    if (!displayMessages || displayMessages.length === 0) return [];
+    return groupMessagesByDate(displayMessages);
+  }, [displayMessages, groupMessagesByDate]);
   
   // Memoize partner name - always computed
   const partnerName = useMemo(() => {
-    if (!activeUser) return 'Unknown User';
-    return activeUser.full_name || activeUser.email || 'Unknown User';
-  }, [activeUser?.full_name, activeUser?.email]);
+    if (currentConversation) {
+      return currentConversation.name || 'Unknown';
+    }
+    if (activeUser) {
+      return activeUser.full_name || activeUser.email || 'Unknown User';
+    }
+    return 'Unknown User';
+  }, [currentConversation?.name, activeUser?.full_name, activeUser?.email]);
   
   // Memoize typing indicator - always computed
   const isTyping = useMemo(() => {
@@ -138,41 +161,56 @@ const ChatWindow = () => {
   // EFFECTS - useEffect at top level
   // ============================================
   
-  // Track activeUserId changes to detect conversation switch
+  // CRITICAL: Load messages when currentConversation changes
+  // This ensures messages are loaded when a conversation is selected
   useEffect(() => {
-    prevActiveUserIdRef.current = activeUserId;
-  }, [activeUserId]);
+    if (!currentConversation?.id) {
+      // No conversation selected - clear messages
+      if (prevActiveUserIdRef.current !== null) {
+        useMessagingStore.setState({ messages: [], groupMessages: [] });
+        prevActiveUserIdRef.current = null;
+      }
+      return;
+    }
+    
+    // Only fetch if this is a new conversation
+    const conversationKey = `${currentConversation.type}-${currentConversation.id}`;
+    const prevKey = prevActiveUserIdRef.current;
+    
+    if (prevKey !== conversationKey) {
+      console.log('ChatWindow: Fetching messages for conversation:', currentConversation);
+      isLoadingOlder.current = false;
+      prevMessageCountRef.current = 0;
+      prevActiveUserIdRef.current = conversationKey;
+      
+      // Fetch messages using the new fetchMessages function
+      fetchMessages(currentConversation.id, currentConversation.type);
+    }
+  }, [currentConversation?.id, currentConversation?.type, fetchMessages]);
   
   // Track message count changes for auto-scroll
   useEffect(() => {
-    prevMessageCountRef.current = messages.length;
-  }, [messages.length]);
+    prevMessageCountRef.current = displayMessages.length;
+  }, [displayMessages.length]);
   
   // Auto-scroll to bottom when messages change (but not when loading older messages)
   // Only scroll if message count increased (new message) or conversation switched
   useEffect(() => {
-    const messageCountIncreased = messages.length > prevMessageCountRef.current;
-    const conversationSwitched = prevActiveUserIdRef.current !== activeUserId;
+    const conversationKey = currentConversation ? `${currentConversation.type}-${currentConversation.id}` : null;
+    const messageCountIncreased = displayMessages.length > prevMessageCountRef.current;
+    const conversationSwitched = prevActiveUserIdRef.current !== conversationKey;
     
-    if (!isLoadingOlder.current && messages.length > 0 && (messageCountIncreased || conversationSwitched)) {
+    if (!isLoadingOlder.current && displayMessages.length > 0 && (messageCountIncreased || conversationSwitched)) {
       scrollToBottom();
     }
-  }, [messages.length, activeUserId, scrollToBottom]);
-  
-  // Reset loading older flag when activeUserId changes
-  useEffect(() => {
-    if (prevActiveUserIdRef.current !== activeUserId) {
-      isLoadingOlder.current = false;
-      prevMessageCountRef.current = 0; // Reset message count ref on conversation switch
-    }
-  }, [activeUserId]);
+  }, [displayMessages.length, currentConversation, scrollToBottom]);
   
   // ============================================
   // RENDER LOGIC - All conditionals AFTER hooks
   // ============================================
   
-  // Early return for no active user - AFTER all hooks
-  if (!activeUser) {
+  // Early return for no conversation selected - AFTER all hooks
+  if (!currentConversation) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-50">
         <div className="text-center">
@@ -183,8 +221,21 @@ const ChatWindow = () => {
     );
   }
   
+  // Show "No messages yet" if conversation exists but messages array is empty and not loading
+  if (currentConversation && displayMessages.length === 0 && !displayLoading) {
+    return (
+      <div className="flex items-center justify-center h-full bg-gray-50">
+        <div className="text-center">
+          <div className="text-gray-400 text-6xl mb-4">💬</div>
+          <p className="text-gray-500 text-lg">No messages yet</p>
+          <p className="text-sm text-gray-400 mt-2">Start the conversation!</p>
+        </div>
+      </div>
+    );
+  }
+  
   // Early return for loading - AFTER all hooks
-  if (loading && messages.length === 0) {
+  if (displayLoading && displayMessages.length === 0) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-50">
         <div className="text-gray-500">Loading messages...</div>
@@ -194,7 +245,7 @@ const ChatWindow = () => {
   
   // Early return for error - AFTER all hooks
   // Only show error screen if it's a loadError (not authError - that's handled in Messaging.jsx)
-  if (loadError && messages.length === 0) {
+  if (loadError && displayMessages.length === 0) {
     return (
       <div className="flex items-center justify-center h-full bg-gray-50">
         <div className="text-center">
@@ -239,9 +290,9 @@ const ChatWindow = () => {
       <div className="p-4 border-b bg-white shadow-sm">
         <div className="flex items-center space-x-3">
           <div className="relative">
-            {activeUser.avatar_url ? (
+            {(currentConversation?.avatar || activeUser?.avatar_url) ? (
               <img
-                src={activeUser.avatar_url}
+                src={currentConversation?.avatar || activeUser.avatar_url}
                 alt={partnerName}
                 className="w-10 h-10 rounded-full object-cover"
               />
@@ -253,7 +304,9 @@ const ChatWindow = () => {
           </div>
           <div className="flex-1">
             <h3 className="font-semibold text-gray-900">{partnerName}</h3>
-            {activeUser.role && (
+            {currentConversation?.type === 'group' ? (
+              <p className="text-xs text-gray-500 capitalize">Group</p>
+            ) : activeUser?.role && (
               <p className="text-xs text-gray-500 capitalize">{activeUser.role}</p>
             )}
           </div>
@@ -266,7 +319,7 @@ const ChatWindow = () => {
         className="flex-1 overflow-y-auto p-4 bg-gray-50"
         onScroll={handleScroll}
       >
-        {hasMore && (
+        {displayHasMore && (
           <div className="flex justify-center mb-4">
             <button
               onClick={handleLoadOlder}
@@ -296,7 +349,13 @@ const ChatWindow = () => {
 
               {/* Messages in this group */}
               {group.messages.map((message, msgIndex) => {
-                if (!message.sender || !message.receiver) return null;
+                // For group messages, only check sender (no receiver)
+                if (currentConversation?.type === 'group') {
+                  if (!message.sender) return null;
+                } else {
+                  // For direct messages, check both sender and receiver
+                  if (!message.sender || !message.receiver) return null;
+                }
                 
                 const isOwnMessage = message.sender.id === user?.id;
                 const showAvatar = msgIndex === 0 || 
@@ -310,9 +369,9 @@ const ChatWindow = () => {
                     {!isOwnMessage && (
                       <div className="flex-shrink-0 mr-2">
                         {showAvatar ? (
-                          activeUser.avatar_url ? (
+                          (currentConversation?.avatar || activeUser?.avatar_url) ? (
                             <img
-                              src={activeUser.avatar_url}
+                              src={currentConversation?.avatar || activeUser.avatar_url}
                               alt={partnerName}
                               className="w-8 h-8 rounded-full object-cover"
                             />
@@ -343,8 +402,8 @@ const ChatWindow = () => {
                         </p>
                       )}
                       <p className="text-xs text-gray-400 mt-1 px-1">
-                        {formatTime(message.sent_at)}
-                        {isOwnMessage && message.is_read && (
+                        {formatTime(message.sent_at || message.created_at)}
+                        {isOwnMessage && message.is_read && currentConversation?.type !== 'group' && (
                           <span className="ml-1">✓✓</span>
                         )}
                       </p>
@@ -394,7 +453,11 @@ const ChatWindow = () => {
       </div>
 
       {/* Input */}
-      <MessageInput />
+      {currentConversation?.type === 'group' ? (
+        <GroupMessageInput />
+      ) : (
+        <MessageInput />
+      )}
     </div>
   );
 };

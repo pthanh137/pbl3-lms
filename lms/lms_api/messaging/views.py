@@ -39,9 +39,57 @@ class SendMessageAPIView(generics.CreateAPIView):
     
     Send a message to another user.
     Body: receiver_id, course_id (optional), content
+    Returns: message data + conversation info for immediate UI update
     """
     serializer_class = MessageSerializer
     permission_classes = [permissions.IsAuthenticated]
+    
+    def create(self, request, *args, **kwargs):
+        """Create message and return with conversation info."""
+        response = super().create(request, *args, **kwargs)
+        message_data = response.data
+        
+        # Get conversation info for immediate UI update
+        receiver_id = request.data.get('receiver_id')
+        if receiver_id:
+            try:
+                receiver = User.objects.get(id=receiver_id)
+                sender = request.user
+                
+                # Get last message time for sorting
+                last_message = Message.objects.filter(
+                    (Q(sender=sender) & Q(receiver=receiver)) |
+                    (Q(sender=receiver) & Q(receiver=sender))
+                ).order_by('-created_at', '-sent_at').first()
+                
+                # Get unread count for receiver
+                unread_count = Message.objects.filter(
+                    sender=sender,
+                    receiver=receiver,
+                    is_read=False
+                ).count()
+                
+                # Build conversation info
+                conversation_info = {
+                    'id': receiver.id,
+                    'type': 'direct',
+                    'name': receiver.full_name or receiver.email or 'Unknown',
+                    'avatar': receiver.avatar_url or None,
+                    'last_message_preview': f"{sender.full_name or sender.email}: {message_data.get('content', '')[:50]}",
+                    'last_message_time': message_data.get('sent_at') or message_data.get('created_at'),
+                    'unread_count': unread_count,
+                }
+                
+                # Add conversation info to response
+                response.data = {
+                    **message_data,
+                    'conversation_info': conversation_info
+                }
+            except Exception as e:
+                # If conversation info fails, still return message
+                print(f"Error building conversation info: {e}")
+        
+        return response
     
     def perform_create(self, serializer):
         """Create message with validation."""
@@ -213,13 +261,36 @@ def get_unread_messages(request):
     })
 
 
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_unread_count(request):
+    """
+    GET /api/messages/unread-count/
+    
+    Get total unread message count for the current user.
+    Returns: { "unread": number }
+    """
+    user = request.user
+    
+    # Count unread messages
+    unread_count = Message.objects.filter(
+        receiver=user,
+        is_read=False
+    ).count()
+    
+    return Response({
+        "unread": unread_count
+    })
+
+
 @api_view(['PATCH'])
 @permission_classes([permissions.IsAuthenticated])
 def mark_message_read(request, message_id):
     """
-    PATCH /api/messages/mark-read/{id}/
+    PATCH /api/messages/{id}/read/
     
     Mark a message as read.
+    Returns updated message data.
     """
     try:
         message = Message.objects.select_related('sender', 'receiver', 'course').get(id=message_id)
@@ -246,109 +317,151 @@ def get_conversations_list(request):
     """
     GET /api/messages/conversations/
     
-    Get list of conversations for the current user.
-    Returns list with:
-    - conversation_user: id, full_name, avatar_url, role
-    - last_message
-    - last_message_time
-    - unread_count_for_current_user
-    - is_online (placeholder)
+    Get list of conversations for the current user (both direct and group).
+    Returns unified format:
+    [
+      {
+        id: conversation_id (user_id for direct, group_id for group),
+        type: "direct" | "group",
+        name: partner/group name,
+        avatar: avatar_url or group thumbnail,
+        last_message_preview: "Sender: content preview",
+        last_message_time: datetime,
+        unread_count: number
+      }
+    ]
+    Sorted by last_message_time (newest first).
     """
-    from .serializers import ConversationListSerializer
-    
     try:
         user = request.user
+        conversations_data = []
         
+        # ============================================
+        # DIRECT MESSAGES (1-1 conversations)
+        # ============================================
         # Get all unique conversation partners with optimized query
-        # Get distinct partners from both sent and received messages
         sent_partners = Message.objects.filter(sender=user).values_list('receiver_id', flat=True).distinct()
         received_partners = Message.objects.filter(receiver=user).values_list('sender_id', flat=True).distinct()
         partner_ids = set(list(sent_partners) + list(received_partners))
         
-        if not partner_ids:
-            return Response([])
-        
-        # Get all partners with select_related optimization
-        partners = User.objects.filter(id__in=partner_ids)
-        
-        # Get last messages for each conversation with optimized query
-        conversations_data = []
-        for partner in partners:
-            try:
-                # Get last message with select_related
-                last_message = Message.objects.filter(
-                    (Q(sender=user) & Q(receiver=partner)) |
-                    (Q(sender=partner) & Q(receiver=user))
-                ).select_related('sender', 'receiver', 'course').order_by('-sent_at').first()
-                
-                # Get unread count
-                unread_count = Message.objects.filter(
-                    sender=partner,
-                    receiver=user,
-                    is_read=False
-                ).count()
-                
-                # Get last message data safely
-                last_message_data = None
-                last_message_time = None
-                if last_message:
-                    try:
-                        last_message_data = ConversationSerializer(last_message, context={'request': request}).data
-                        last_message_time = last_message.sent_at
-                    except Exception as e:
-                        # If serialization fails, log and set to None
-                        import traceback
-                        print(f"Error serializing last message: {e}")
-                        print(traceback.format_exc())
-                        last_message_data = None
-                        last_message_time = None
-                
-                conversations_data.append({
-                    'conversation_user': {
+        if partner_ids:
+            # Get all partners with select_related optimization
+            partners = User.objects.filter(id__in=partner_ids)
+            
+            for partner in partners:
+                try:
+                    # Get last message with annotation for sorting
+                    last_message = Message.objects.filter(
+                        (Q(sender=user) & Q(receiver=partner)) |
+                        (Q(sender=partner) & Q(receiver=user))
+                    ).select_related('sender', 'receiver', 'course').order_by('-sent_at').first()
+                    
+                    # Get unread count
+                    unread_count = Message.objects.filter(
+                        sender=partner,
+                        receiver=user,
+                        is_read=False
+                    ).count()
+                    
+                    # Only add conversation if it has at least one message
+                    if not last_message:
+                        continue  # Skip conversations with no messages
+                    
+                    # Build last_message_preview
+                    last_message_time = last_message.sent_at
+                    sender_name = last_message.sender.full_name or last_message.sender.email
+                    content = last_message.content[:50]
+                    if len(last_message.content) > 50:
+                        content += '...'
+                    last_message_preview = f"{sender_name}: {content}"
+                    
+                    conversations_data.append({
                         'id': partner.id,
-                        'full_name': partner.full_name or '',
-                        'avatar_url': partner.avatar_url or None,
-                        'role': partner.role or '',
-                    },
-                    'last_message': last_message_data,
-                    'last_message_time': last_message_time,
-                    'unread_count_for_current_user': unread_count,
-                    'is_online': False,  # Placeholder - can be implemented with WebSocket or Redis
-                })
-            except Exception as e:
-                # Skip this partner if there's an error
-                import traceback
-                print(f"Error processing partner {partner.id}: {e}")
-                print(traceback.format_exc())
-                continue
+                        'type': 'direct',
+                        'name': partner.full_name or partner.email or 'Unknown',
+                        'avatar': partner.avatar_url or None,
+                        'last_message_preview': last_message_preview,
+                        'last_message_time': last_message_time,
+                        'unread_count': unread_count,
+                    })
+                except Exception as e:
+                    import traceback
+                    print(f"Error processing partner {partner.id}: {e}")
+                    print(traceback.format_exc())
+                    continue
         
-        # Sort by last message time (most recent first)
-        # Handle None values safely
-        def get_sort_key(x):
-            if x.get('last_message_time'):
-                return x['last_message_time']
-            return timezone.make_aware(dt.min)
+        # ============================================
+        # GROUP MESSAGES
+        # ============================================
+        # Get all groups where user is a member
+        from .models import GroupMember, GroupMessage
+        from .utils import sync_course_group_members
+        from courses.models import Course
         
-        conversations_data.sort(key=get_sort_key, reverse=True)
+        # Sync groups for user's courses
+        courses = Course.objects.filter(teacher=user) | Course.objects.filter(enrollments__student=user)
+        courses = courses.distinct()
+        for course in courses:
+            sync_course_group_members(course)
         
-        # Serialize the data
-        try:
-            serializer = ConversationListSerializer(conversations_data, many=True)
-            # For Serializer (not ModelSerializer), we need to check is_valid
-            # But since we're constructing the data ourselves, it should be valid
-            if serializer.is_valid():
-                return Response(serializer.validated_data)
-            else:
-                # Log validation errors for debugging
-                print(f"Serializer validation errors: {serializer.errors}")
-                # Return raw data as fallback if validation fails
-                return Response(conversations_data)
-        except Exception as serialization_error:
-            import traceback
-            print(f"Error serializing conversations list: {serialization_error}")
-            print(traceback.format_exc())
-            # Return raw data as fallback
-            return Response(conversations_data)
+        # Get all groups where user is a member
+        member_groups = GroupMember.objects.filter(user=user).select_related('group', 'group__course')
+        group_ids = [member.group.id for member in member_groups]
+        
+        if group_ids:
+            # Get last message for each group with annotation
+            for group_id in group_ids:
+                try:
+                    group = CourseGroup.objects.get(id=group_id)
+                    last_message = GroupMessage.objects.filter(
+                        group=group
+                    ).select_related('sender').order_by('-created_at').first()
+                    
+                    # Only add group conversation if it has at least one message
+                    if not last_message:
+                        continue  # Skip groups with no messages
+                    
+                    # For groups, unread_count is 0 for now (can be enhanced later)
+                    # We could track last_viewed_at per user per group
+                    unread_count = 0
+                    
+                    # Build last_message_preview
+                    last_message_time = last_message.created_at
+                    sender_name = last_message.sender.full_name or last_message.sender.email
+                    content = last_message.content[:50]
+                    if len(last_message.content) > 50:
+                        content += '...'
+                    last_message_preview = f"{sender_name}: {content}"
+                    
+                    conversations_data.append({
+                        'id': group.id,
+                        'type': 'group',
+                        'name': group.name,
+                        'avatar': group.course.thumbnail_url if group.course else None,
+                        'last_message_preview': last_message_preview,
+                        'last_message_time': last_message_time,
+                        'unread_count': unread_count,
+                    })
+                except Exception as e:
+                    import traceback
+                    print(f"Error processing group {group_id}: {e}")
+                    print(traceback.format_exc())
+                    continue
+        
+        # Filter out conversations with no messages (last_message_time is None)
+        # This is a safety check, but we should have already filtered them above
+        conversations_with_messages = [
+            conv for conv in conversations_data 
+            if conv.get('last_message_time') is not None
+        ]
+        
+        # Sort by last_message_time (most recent first)
+        conversations_with_messages.sort(
+            key=lambda x: x['last_message_time'], 
+            reverse=True
+        )
+        
+        return Response(conversations_with_messages)
     except Exception as e:
         import traceback
         print(f"Error in get_conversations_list: {e}")

@@ -92,6 +92,8 @@ class StudentQuizAttempt(models.Model):
     )
     started_at = models.DateTimeField(auto_now_add=True)
     completed_at = models.DateTimeField(null=True, blank=True)
+    start_time = models.DateTimeField(null=True, blank=True)
+    end_time = models.DateTimeField(null=True, blank=True)
     score = models.FloatField(default=0)
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='in_progress')
     
@@ -101,6 +103,15 @@ class StudentQuizAttempt(models.Model):
     
     def __str__(self):
         return f"{self.student.email} - {self.quiz.title} ({self.status})"
+    
+    @property
+    def time_spent_seconds(self):
+        """Calculate time spent in seconds using start_time and end_time."""
+        if self.start_time and self.end_time:
+            delta = self.end_time - self.start_time
+            return int(max(delta.total_seconds(), 0))
+        # Return None if start_time or end_time is missing (not 0)
+        return None
 
 
 class StudentAnswer(models.Model):

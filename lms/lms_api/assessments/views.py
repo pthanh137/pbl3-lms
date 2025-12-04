@@ -98,7 +98,7 @@ class TeacherQuizViewSet(viewsets.ModelViewSet):
                 title=f"New Quiz: {quiz.title}",
                 message=f"A new quiz has been published in {course.title}.",
                 notification_type='quiz_created',
-                target_url=f"/courses/{course.id}/quizzes/{quiz.id}/take"
+                target_url=f"/quiz-start/{quiz.id}"
             )
     
     def perform_update(self, serializer):
@@ -124,7 +124,7 @@ class TeacherQuizViewSet(viewsets.ModelViewSet):
                 title=f"Quiz Updated: {quiz.title}",
                 message=f"Quiz '{quiz.title}' has been updated in {quiz.course.title}.",
                 notification_type='quiz_updated',
-                target_url=f"/courses/{quiz.course.id}/quizzes/{quiz.id}/take"
+                target_url=f"/quiz-start/{quiz.id}"
             )
 
 
@@ -238,14 +238,20 @@ class QuizStartAPIView(generics.CreateAPIView):
         ).first()
         
         if not attempt:
+            now = timezone.now()
             attempt = StudentQuizAttempt.objects.create(
                 student=request.user,
                 quiz=quiz,
                 status='in_progress',
-                started_at=timezone.now()
+                started_at=now,
+                start_time=now  # Set start_time when student starts quiz
             )
             created = True
         else:
+            # If attempt exists but start_time is not set, set it now
+            if not attempt.start_time:
+                attempt.start_time = timezone.now()
+                attempt.save(update_fields=['start_time'])
             created = False
         
         serializer = self.get_serializer(attempt)
@@ -283,11 +289,13 @@ class QuizSubmitAPIView(generics.CreateAPIView):
         
         if not attempt:
             # Create new attempt
+            now = timezone.now()
             attempt = StudentQuizAttempt.objects.create(
                 student=request.user,
                 quiz=quiz,
                 status='in_progress',
-                started_at=timezone.now()
+                started_at=now,
+                start_time=now  # Set start_time if creating new attempt
             )
         
         # Parse answers
@@ -330,10 +338,20 @@ class QuizSubmitAPIView(generics.CreateAPIView):
         # Calculate score as percentage (0-100) for consistency
         score_percentage = (obtained_points / total_points * 100) if total_points > 0 else 0
         
+        # Set end_time when student submits quiz
+        now = timezone.now()
+        
         # Update attempt with percentage score
         attempt.score = score_percentage
         attempt.status = 'completed'
-        attempt.completed_at = timezone.now()
+        attempt.completed_at = now
+        attempt.end_time = now  # Set end_time when student submits quiz
+        
+        # Ensure start_time is set if it wasn't set before
+        if not attempt.start_time:
+            # If start_time is missing, estimate it from started_at
+            attempt.start_time = attempt.started_at
+        
         attempt.save()
         
         # Create notification for teacher when student completes quiz

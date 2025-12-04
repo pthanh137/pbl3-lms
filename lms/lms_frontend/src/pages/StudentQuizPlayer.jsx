@@ -88,52 +88,49 @@ const StudentQuizPlayer = () => {
       const quizResponse = await studentQuizAPI.getQuizDetail(quizId);
       setQuiz(quizResponse.data);
 
-      // Check if there's an existing completed attempt (only on initial load, not on retake)
-      if (!showResult) {
-        try {
-          const attemptResponse = await studentQuizAPI.getMyQuizAttempt(quizId);
-          const attempts = Array.isArray(attemptResponse.data) 
-            ? attemptResponse.data 
-            : attemptResponse.data?.results || [];
-          const completedAttempt = attempts.find(a => a.status === 'completed');
-          const inProgressAttempt = attempts.find(a => a.status === 'in_progress');
-          
-          if (completedAttempt && !result) {
-            // Quiz already completed, show result
-            const totalPoints = quizResponse.data.questions?.reduce((sum, q) => sum + (q.points || 0), 0) || 0;
-            const percentage = totalPoints > 0 ? (completedAttempt.score / totalPoints) * 100 : 0;
-            setResult({
-              score: completedAttempt.score,
-              total_points: totalPoints,
-              percentage: percentage
-            });
-            setShowResult(true);
-            return;
-          }
-          
-          if (inProgressAttempt) {
-            setAttempt(inProgressAttempt);
-            return;
-          }
-        } catch (err) {
-          // No attempt found, continue
-          console.log('No existing attempt found');
-        }
-      }
-
-      // Start quiz attempt (idempotent - safe to call multiple times)
-      // This will create a new in_progress attempt even if there's a completed one
+      // Check if there's an existing attempt
       try {
-        const startResponse = await studentQuizAPI.startQuiz(quizId);
-        setAttempt(startResponse.data);
+        const attemptResponse = await studentQuizAPI.getMyQuizAttempt(quizId);
+        const attempts = Array.isArray(attemptResponse.data) 
+          ? attemptResponse.data 
+          : attemptResponse.data?.results || [];
+        const completedAttempt = attempts.find(a => a.status === 'completed');
+        const inProgressAttempt = attempts.find(a => a.status === 'in_progress');
+        
+        if (completedAttempt && !result && !showResult) {
+          // Quiz already completed, show result
+          const totalPoints = quizResponse.data.questions?.reduce((sum, q) => sum + (q.points || 0), 0) || 0;
+          const percentage = totalPoints > 0 ? (completedAttempt.score / totalPoints) * 100 : 0;
+          setResult({
+            score: completedAttempt.score,
+            total_points: totalPoints,
+            percentage: percentage
+          });
+          setShowResult(true);
+          setLoading(false);
+          return;
+        }
+        
+        if (inProgressAttempt) {
+          // Has in-progress attempt, allow to continue
+          setAttempt(inProgressAttempt);
+          setLoading(false);
+          return;
+        }
+        
+        // No in-progress attempt found - redirect to quiz-start page
+        // This prevents direct access to /take without starting
+        navigate(`/quiz-start/${quizId}`, { replace: true });
+        return;
       } catch (err) {
-        // Ignore errors if already started
-        console.log('Quiz already started or error starting:', err);
+        // No attempt found - redirect to quiz-start page
+        console.log('No existing attempt found, redirecting to quiz-start');
+        navigate(`/quiz-start/${quizId}`, { replace: true });
+        return;
       }
     } catch (err) {
       console.error('Error fetching quiz:', err);
       setError(err.response?.data?.detail || 'Failed to load quiz');
-    } finally {
       setLoading(false);
     }
   };

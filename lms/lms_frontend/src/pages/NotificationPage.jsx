@@ -64,17 +64,28 @@ const NotificationPage = () => {
   }, [notifications, filter, selectedCourse]);
 
   const handleNotificationClick = async (notification) => {
-    // Mark as read if unread
+    // Mark as read if unread - this will update the store and badge instantly
     if (!notification.is_read) {
       await markRead(notification.id);
+      // Refresh notifications list to get updated state
+      await loadNotifications();
     }
     
     // Navigate to target_url if available, otherwise fallback to course
     if (notification.target_url) {
-      navigate(notification.target_url);
+      // Check if target_url is a quiz take page, redirect to quiz-start instead
+      const quizTakeMatch = notification.target_url.match(/\/courses\/(\d+)\/quizzes\/(\d+)\/take/);
+      if (quizTakeMatch) {
+        const [, , quizId] = quizTakeMatch;
+        navigate(`/quiz-start/${quizId}`);
+      } else {
+        navigate(notification.target_url);
+      }
     } else if (notification.course?.id) {
       // Fallback navigation based on notification type
       if (notification.notification_type?.includes('quiz')) {
+        // For quiz notifications, try to extract quizId from message or use course quizzes list
+        // For now, redirect to course quizzes list
         navigate(`/courses/${notification.course.id}/quizzes`);
       } else if (notification.notification_type?.includes('assignment')) {
         navigate(`/courses/${notification.course.id}/assignments`);
@@ -88,6 +99,8 @@ const NotificationPage = () => {
 
   const handleMarkAllRead = async () => {
     await markAllRead();
+    // Refresh notifications list to get updated state
+    await loadNotifications();
   };
 
   const formatDate = (dateString) => {
@@ -152,7 +165,7 @@ const NotificationPage = () => {
             {unreadCount > 0 && (
               <button
                 onClick={handleMarkAllRead}
-                className="px-4 py-2 text-sm font-medium text-primary-600 hover:text-primary-700 bg-primary-50 hover:bg-primary-100 rounded-lg transition"
+                className="px-4 py-2 text-sm font-medium text-blue-600 hover:text-blue-700 bg-blue-50 hover:bg-blue-100 rounded-lg transition"
               >
                 Mark all as read
               </button>
@@ -180,7 +193,7 @@ const NotificationPage = () => {
               onClick={() => setFilter('all')}
               className={`px-4 py-2 rounded-lg font-medium transition ${
                 filter === 'all'
-                  ? 'bg-primary-500 text-white'
+                  ? 'bg-blue-500 text-white'
                   : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
               }`}
             >
@@ -190,7 +203,7 @@ const NotificationPage = () => {
               onClick={() => setFilter('unread')}
               className={`px-4 py-2 rounded-lg font-medium transition ${
                 filter === 'unread'
-                  ? 'bg-primary-500 text-white'
+                  ? 'bg-blue-500 text-white'
                   : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
               }`}
             >
@@ -203,7 +216,7 @@ const NotificationPage = () => {
             <select
               value={selectedCourse}
               onChange={(e) => setSelectedCourse(e.target.value)}
-              className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 focus:ring-2 focus:ring-primary-500 focus:border-primary-500 outline-none"
+              className="px-4 py-2 rounded-lg border border-slate-300 bg-white text-slate-700 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
             >
               <option value="all">All Courses</option>
               {courses.map(course => (
@@ -237,34 +250,38 @@ const NotificationPage = () => {
                 <div
                   key={notification.id}
                   className={`bg-white rounded-xl border-2 shadow-sm p-6 transition-all hover:shadow-md cursor-pointer ${
-                    isUnread ? 'border-primary-300 bg-primary-50' : 'border-slate-200'
+                    isUnread ? 'border-blue-300 bg-blue-50' : 'border-slate-200 opacity-75'
                   }`}
                   onClick={() => handleNotificationClick(notification)}
                 >
                   <div className="flex items-start gap-4">
-                    {/* Unread Indicator */}
+                    {/* Blue dot for unread */}
                     <div className={`flex-shrink-0 w-3 h-3 rounded-full mt-2 ${
-                      isUnread ? 'bg-primary-500' : 'bg-transparent'
+                      isUnread ? 'bg-blue-500' : 'bg-transparent'
                     }`}></div>
                     
                     {/* Content */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-start justify-between mb-2">
-                        <h3 className={`text-lg font-semibold ${isUnread ? 'text-primary-900' : 'text-slate-900'}`}>
+                        <h3 className={`text-lg font-semibold ${isUnread ? 'text-slate-900' : 'text-slate-500'}`}>
                           {notification.title}
                         </h3>
                         {isUnread && (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-primary-500 text-white ml-2">
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-500 text-white ml-2">
                             NEW
                           </span>
                         )}
                       </div>
                       
-                      <p className="text-slate-700 mb-3 whitespace-pre-wrap break-words">
+                      <p className={`mb-3 whitespace-pre-wrap break-words ${
+                        isUnread ? 'text-slate-700' : 'text-slate-500'
+                      }`}>
                         {notification.message}
                       </p>
                       
-                      <div className="flex items-center gap-4 text-sm text-slate-500">
+                      <div className={`flex items-center gap-4 text-sm ${
+                        isUnread ? 'text-slate-500' : 'text-slate-400'
+                      }`}>
                         {notification.course && (
                           <>
                             <span className="font-medium">{notification.course.title}</span>

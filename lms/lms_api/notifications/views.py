@@ -33,11 +33,11 @@ class NotificationListAPIView(generics.ListAPIView):
         ).select_related('course').order_by('is_read', '-created_at')
 
 
-@api_view(['PATCH'])
+@api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def mark_notification_read(request, notification_id):
     """
-    PATCH /api/notifications/<id>/read/
+    POST /api/notifications/<id>/read/
     
     Mark a notification as read.
     """
@@ -59,11 +59,11 @@ def mark_notification_read(request, notification_id):
     return Response(serializer.data, status=status.HTTP_200_OK)
 
 
-@api_view(['PATCH'])
+@api_view(['POST'])
 @permission_classes([permissions.IsAuthenticated])
 def mark_all_notifications_read(request):
     """
-    PATCH /api/notifications/mark-all-read/
+    POST /api/notifications/mark-all-read/
     
     Mark all notifications as read for the current user.
     """
