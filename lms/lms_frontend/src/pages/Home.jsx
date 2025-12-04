@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { coursesAPI, getTopInstructors } from '../api/client';
 import CourseCard from '../components/CourseCard';
 import InstructorCard from '../components/InstructorCard';
+import Footer from '../components/Footer';
 
 const Home = () => {
   const navigate = useNavigate();
@@ -388,6 +389,9 @@ const Home = () => {
           </div>
         </div>
       )}
+
+      {/* Footer */}
+      <Footer />
     </div>
   );
 };
