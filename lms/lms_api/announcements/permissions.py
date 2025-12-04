@@ -93,3 +93,4 @@ class CanViewAnnouncement(permissions.BasePermission):
         
         return False
 
+

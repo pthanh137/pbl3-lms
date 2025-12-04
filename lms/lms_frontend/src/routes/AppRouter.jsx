@@ -18,6 +18,8 @@ import StudentAssignmentDetail from '../pages/StudentAssignmentDetail';
 import TeacherCourseAssignments from '../pages/TeacherCourseAssignments';
 import TeacherAssignmentEditor from '../pages/TeacherAssignmentEditor';
 import TeacherAssignmentSubmissions from '../pages/TeacherAssignmentSubmissions';
+import TeacherQuizResults from '../pages/TeacherQuizResults';
+import TeacherQuizSubmissionDetail from '../pages/TeacherQuizSubmissionDetail';
 import TeacherAnalytics from '../pages/TeacherAnalytics';
 import TeacherStudents from '../pages/TeacherStudents';
 import StudentProfile from '../pages/StudentProfile';
@@ -302,6 +304,22 @@ const AppRouter = () => {
           element={
             <TeacherRoute>
               <QuizEditor />
+            </TeacherRoute>
+          }
+        />
+        <Route
+          path="/teacher/quizzes/:quizId/results"
+          element={
+            <TeacherRoute>
+              <TeacherQuizResults />
+            </TeacherRoute>
+          }
+        />
+        <Route
+          path="/teacher/submissions/:submissionId"
+          element={
+            <TeacherRoute>
+              <TeacherQuizSubmissionDetail />
             </TeacherRoute>
           }
         />

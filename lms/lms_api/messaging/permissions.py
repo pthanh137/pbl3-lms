@@ -14,3 +14,4 @@ class IsMessageParticipant(permissions.BasePermission):
             (obj.sender == request.user or obj.receiver == request.user)
         )
 
+

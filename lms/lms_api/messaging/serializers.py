@@ -1,6 +1,7 @@
 from rest_framework import serializers
-from .models import Message, TypingIndicator
+from .models import Message, TypingIndicator, CourseGroup, GroupMessage, GroupMember
 from users.serializers import UserSerializer
+from users.models import User
 
 
 class MessageSerializer(serializers.ModelSerializer):
@@ -137,3 +138,85 @@ class TypingIndicatorSerializer(serializers.ModelSerializer):
             'updated_at',
         ]
         read_only_fields = ['id', 'updated_at']
+
+
+class GroupSerializer(serializers.ModelSerializer):
+    """Serializer for CourseGroup."""
+    
+    course_id = serializers.IntegerField(source='course.id', read_only=True)
+    members_count = serializers.IntegerField(source='members.count', read_only=True)
+    
+    class Meta:
+        model = CourseGroup
+        fields = [
+            'id',
+            'name',
+            'course_id',
+            'members_count',
+        ]
+        read_only_fields = ['id', 'name', 'course_id', 'members_count']
+
+
+class CourseGroupSerializer(serializers.ModelSerializer):
+    """Serializer for CourseGroup (simplified for user groups list)."""
+    
+    members_count = serializers.IntegerField(source='members.count', read_only=True)
+    course_thumbnail = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = CourseGroup
+        fields = ['id', 'name', 'members_count', 'course_thumbnail']
+    
+    def get_course_thumbnail(self, obj):
+        """Return course thumbnail URL."""
+        if obj.course and obj.course.thumbnail_url:
+            return obj.course.thumbnail_url
+        return None
+
+
+class GroupMessageSerializer(serializers.ModelSerializer):
+    """Serializer for GroupMessage."""
+    
+    sender = serializers.SerializerMethodField()
+    created_at = serializers.DateTimeField(read_only=True, format='%Y-%m-%dT%H:%M:%S.%fZ')
+    
+    class Meta:
+        model = GroupMessage
+        fields = [
+            'id',
+            'content',
+            'sender',
+            'created_at',
+        ]
+        read_only_fields = ['id', 'created_at']
+    
+    def get_sender(self, obj):
+        """Return sender info with role."""
+        # Get user's role in the group
+        member = obj.group.members.filter(user=obj.sender).first()
+        role = member.role if member else 'student'
+        
+        return {
+            'id': obj.sender.id,
+            'full_name': obj.sender.full_name or '',
+            'avatar_url': obj.sender.avatar_url or None,
+            'role': role,
+        }
+
+
+class GroupMemberUserSerializer(serializers.ModelSerializer):
+    """Serializer for User in GroupMember context."""
+    
+    class Meta:
+        model = User
+        fields = ["id", "full_name", "email", "avatar_url", "role"]
+
+
+class GroupMemberSerializer(serializers.ModelSerializer):
+    """Serializer for GroupMember."""
+    
+    user = GroupMemberUserSerializer(read_only=True)
+    
+    class Meta:
+        model = GroupMember
+        fields = ["id", "user", "is_admin"]

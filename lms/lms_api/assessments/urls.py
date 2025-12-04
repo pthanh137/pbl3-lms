@@ -7,6 +7,8 @@ from .views import (
     QuestionDetailAPIView,
     ChoiceCreateAPIView,
     ChoiceDetailAPIView,
+    TeacherQuizSubmissionsView,
+    TeacherQuizSubmissionDetailView,
     # Student Quiz
     CourseQuizzesListAPIView,
     QuizDetailAPIView,
@@ -39,6 +41,9 @@ urlpatterns = [
     path('teacher/questions/<int:pk>/', QuestionDetailAPIView.as_view(), name='question-detail'),
     path('teacher/questions/<int:question_id>/choices/', ChoiceCreateAPIView.as_view(), name='choice-create'),
     path('teacher/choices/<int:pk>/', ChoiceDetailAPIView.as_view(), name='choice-detail'),
+    # Teacher Quiz Submissions
+    path('teacher/quizzes/<int:quiz_id>/submissions/', TeacherQuizSubmissionsView.as_view(), name='quiz-submissions'),
+    path('teacher/submissions/<int:id>/', TeacherQuizSubmissionDetailView.as_view(), name='quiz-submission-detail'),
     
     # Teacher Assignment Management
     path('teacher/assignments/<int:pk>/submissions/', TeacherAssignmentViewSet.as_view({'get': 'submissions'}), name='assignment-submissions'),

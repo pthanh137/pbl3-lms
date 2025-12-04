@@ -65,3 +65,83 @@ class TypingIndicator(models.Model):
     def __str__(self):
         status = "typing" if self.is_typing else "not typing"
         return f"{self.sender.email} -> {self.receiver.email} ({status})"
+
+
+class CourseGroup(models.Model):
+    """Group chat for a course."""
+    
+    course = models.OneToOneField(
+        'courses.Course',
+        on_delete=models.CASCADE,
+        related_name='group',
+        unique=True
+    )
+    name = models.CharField(max_length=255)
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'course_groups'
+        ordering = ['-created_at']
+    
+    def __str__(self):
+        return f"Group: {self.name}"
+
+
+class GroupMember(models.Model):
+    """Member of a course group."""
+    
+    ROLE_CHOICES = [
+        ('teacher', 'Teacher'),
+        ('student', 'Student'),
+    ]
+    
+    group = models.ForeignKey(
+        CourseGroup,
+        on_delete=models.CASCADE,
+        related_name='members'
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='group_memberships'
+    )
+    role = models.CharField(max_length=10, choices=ROLE_CHOICES, default='student')
+    is_admin = models.BooleanField(default=False, help_text="Teacher = admin")
+    joined_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'group_members'
+        unique_together = ['group', 'user']
+        indexes = [
+            models.Index(fields=['group', 'user']),
+        ]
+    
+    def __str__(self):
+        return f"{self.user} in {self.group}"
+
+
+class GroupMessage(models.Model):
+    """Message in a course group chat."""
+    
+    group = models.ForeignKey(
+        CourseGroup,
+        on_delete=models.CASCADE,
+        related_name='messages'
+    )
+    sender = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.CASCADE,
+        related_name='group_messages_sent'
+    )
+    content = models.TextField()
+    created_at = models.DateTimeField(auto_now_add=True)
+    
+    class Meta:
+        db_table = 'group_messages'
+        ordering = ['-created_at']
+        indexes = [
+            models.Index(fields=['group', 'created_at']),
+        ]
+    
+    def __str__(self):
+        return f"{self.sender.email} in {self.group.name}: {self.content[:50]}"

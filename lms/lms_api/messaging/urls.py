@@ -8,6 +8,11 @@ from .views import (
     get_available_contacts,
     typing_indicator,
     get_typing_indicator,
+    get_my_groups,
+    get_group_messages,
+    send_group_message,
+    UserCourseGroups,
+    GroupMembersAPIView,
 )
 
 urlpatterns = [
@@ -19,5 +24,11 @@ urlpatterns = [
     path('messages/contacts/', get_available_contacts, name='message-contacts'),
     path('messages/typing/', typing_indicator, name='message-typing'),
     path('messages/typing/status/', get_typing_indicator, name='message-typing-status'),
+    # Group chat endpoints
+    path('messages/groups/', UserCourseGroups.as_view(), name='user-course-groups'),
+    path('messages/groups/my/', get_my_groups, name='groups-my'),
+    path('messages/groups/<int:group_id>/members/', GroupMembersAPIView.as_view(), name='group-members'),
+    path('messages/groups/<int:group_id>/messages/', get_group_messages, name='group-messages'),
+    path('messages/groups/<int:group_id>/messages/send/', send_group_message, name='group-message-send'),
 ]
 

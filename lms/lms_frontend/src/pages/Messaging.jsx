@@ -4,6 +4,8 @@ import { useAuth } from '../context/AuthContext';
 import ChatList from '../features/messaging/components/ChatList';
 import ChatWindow from '../features/messaging/components/ChatWindow';
 import ContactsList from '../features/messaging/components/ContactsList';
+import GroupsList from '../features/messaging/components/GroupsList';
+import GroupChatWindow from '../features/messaging/components/GroupChatWindow';
 import useMessagingStore from '../features/messaging/store/messagingStore';
 
 // ============================================
@@ -29,6 +31,7 @@ const Messaging = () => {
     loadError,
   } = useMessagingStore();
   const [showContacts, setShowContacts] = useState(false);
+  const [showGroups, setShowGroups] = useState(false);
   const navigate = useNavigate();
   const hasInitializedRef = useRef(false);
   const prevAuthStateRef = useRef({ isAuthenticated, accessToken });
@@ -210,9 +213,12 @@ const Messaging = () => {
             <div className="w-1/3 border-r border-gray-200 flex flex-col">
               <div className="flex border-b">
                 <button
-                  onClick={() => setShowContacts(false)}
+                  onClick={() => {
+                    setShowContacts(false);
+                    setShowGroups(false);
+                  }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    !showContacts
+                    !showContacts && !showGroups
                       ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-500'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
@@ -220,25 +226,47 @@ const Messaging = () => {
                   Conversations
                 </button>
                 <button
-                  onClick={() => setShowContacts(true)}
+                  onClick={() => {
+                    setShowContacts(true);
+                    setShowGroups(false);
+                  }}
                   className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
-                    showContacts
+                    showContacts && !showGroups
                       ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-500'
                       : 'text-gray-600 hover:bg-gray-50'
                   }`}
                 >
                   Contacts
                 </button>
+                <button
+                  onClick={() => {
+                    setShowContacts(false);
+                    setShowGroups(true);
+                  }}
+                  className={`flex-1 px-4 py-3 text-sm font-medium transition-colors ${
+                    showGroups
+                      ? 'bg-blue-50 text-blue-600 border-b-2 border-blue-500'
+                      : 'text-gray-600 hover:bg-gray-50'
+                  }`}
+                >
+                  Groups
+                </button>
               </div>
               <div className="flex-1 overflow-hidden">
-                {showContacts ? <ContactsList /> : <ChatList />}
+                {showGroups ? <GroupsList /> : showContacts ? <ContactsList /> : <ChatList />}
               </div>
             </div>
 
             {/* Right Side - Chat Window */}
             {/* ChatWindow stays mounted - only content changes */}
             <div className="flex-1 flex flex-col">
-              <ChatWindow />
+              {showGroups ? (
+                // Show GroupChatWindow when Groups tab is active
+                <GroupChatWindow />
+              ) : (
+                // Show regular ChatWindow for Conversations/Contacts
+                <ChatWindow />
+              )}
             </div>
           </div>
         </div>

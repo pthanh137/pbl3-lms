@@ -16,11 +16,16 @@ const useMessagingStore = create((set, get) => ({
   conversations: [],
   messages: [],
   activeUser: null, // Currently selected conversation partner
+  activeGroup: null, // Currently selected group
+  groupMessages: [], // Messages for active group
+  groupPage: 1,
+  groupHasMore: true,
   unreadCount: 0,
   typingState: {}, // { userId: boolean }
   page: 1,
   hasMore: true,
   loading: false,
+  groupLoading: false,
   authError: null, // Specifically for 401 unauthenticated errors
   loadError: null, // For generic API errors (non-401)
   pollingInterval: null,
@@ -665,6 +670,136 @@ const useMessagingStore = create((set, get) => ({
     } catch (error) {
       // Silently fail for unread count - don't set errors
       console.error('Failed to refresh unread count:', error);
+    }
+  },
+
+  // ============================================
+  // GROUP CHAT ACTIONS
+  // ============================================
+
+  setActiveGroup: (group) => {
+    set({ 
+      activeGroup: group, 
+      activeUser: null, // Clear activeUser when selecting group
+      groupMessages: [], 
+      groupPage: 1, 
+      groupHasMore: true,
+      loadError: null,
+      authError: null,
+      toastMessage: null,
+    });
+    if (group) {
+      get().loadGroupMessages(group.id, 1, true);
+    }
+  },
+
+  loadGroupMessages: async (groupId, pageNum = 1, replace = false) => {
+    if (!get().isAuthenticated()) {
+      set({ authError: 'User not authenticated' });
+      return;
+    }
+
+    const { activeGroup } = get();
+    
+    if (!replace && activeGroup?.id !== groupId) {
+      return;
+    }
+
+    const isPolling = get().pollingInterval !== null;
+    if (pageNum === 1 && !replace && isPolling) {
+      // Silent update for polling
+    } else {
+      set({ groupLoading: true, loadError: null, authError: null });
+    }
+    
+    try {
+      const response = await messagingAPI.getGroupMessages(groupId, pageNum);
+      const data = response.data;
+      
+      const newMessages = Array.isArray(data) ? data : (data.results || []);
+      const hasMore = data.next ? true : false;
+      
+      const currentState = get();
+      let updatedMessages;
+      
+      if (replace) {
+        updatedMessages = newMessages;
+      } else if (pageNum > 1) {
+        const existingIds = new Set(currentState.groupMessages.map(m => m.id));
+        const uniqueNew = newMessages.filter(m => !existingIds.has(m.id));
+        updatedMessages = [...uniqueNew, ...currentState.groupMessages];
+      } else {
+        const existingIds = new Set(currentState.groupMessages.map(m => m.id));
+        const uniqueNew = newMessages.filter(m => !existingIds.has(m.id));
+        updatedMessages = [...currentState.groupMessages, ...uniqueNew];
+      }
+      
+      set({
+        groupMessages: updatedMessages,
+        groupPage: pageNum,
+        groupHasMore: hasMore,
+        groupLoading: false,
+        authError: null,
+        loadError: null,
+      });
+    } catch (error) {
+      console.error('Failed to load group messages:', error);
+      if (error.response?.status === 401) {
+        set({ 
+          authError: 'User not authenticated',
+          groupLoading: false,
+        });
+      } else {
+        set({ 
+          loadError: error.response?.data?.detail || 'Failed to load group messages',
+          groupLoading: false,
+        });
+      }
+    }
+  },
+
+  loadOlderGroupMessages: async () => {
+    const { activeGroup, groupPage, groupHasMore, groupLoading } = get();
+    
+    if (!activeGroup || !groupHasMore || groupLoading) {
+      return;
+    }
+    
+    const nextPage = groupPage + 1;
+    await get().loadGroupMessages(activeGroup.id, nextPage, false);
+  },
+
+  sendGroupMessage: async (content) => {
+    const { activeGroup } = get();
+    
+    if (!activeGroup || !content.trim()) {
+      throw new Error('No active group or empty message');
+    }
+
+    if (!get().isAuthenticated()) {
+      set({ authError: 'User not authenticated' });
+      throw new Error('User not authenticated');
+    }
+
+    try {
+      const response = await messagingAPI.sendGroupMessage(activeGroup.id, content.trim());
+      const newMessage = response.data;
+      
+      // Add message to groupMessages
+      set((state) => ({
+        groupMessages: [...state.groupMessages, newMessage],
+      }));
+      
+      return newMessage;
+    } catch (error) {
+      console.error('Failed to send group message:', error);
+      if (error.response?.status === 401) {
+        set({ authError: 'User not authenticated' });
+      } else {
+        const errorMsg = error.response?.data?.detail || 'Failed to send message';
+        set({ toastMessage: errorMsg });
+      }
+      throw error;
     }
   },
 }));

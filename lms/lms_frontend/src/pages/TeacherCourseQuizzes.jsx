@@ -321,6 +321,12 @@ const TeacherCourseQuizzes = () => {
                 </div>
                 <div className="flex gap-2">
                   <button
+                    onClick={() => navigate(`/teacher/quizzes/${quiz.id}/results`)}
+                    className="px-3 py-1.5 bg-slate-500 hover:bg-slate-600 text-white rounded-lg text-sm font-medium transition shadow-sm hover:shadow-md"
+                  >
+                    View Results
+                  </button>
+                  <button
                     onClick={() => navigate(`/teacher/quizzes/${quiz.id}/edit`)}
                     className="px-3 py-1.5 bg-primary-500 hover:bg-primary-600 text-white rounded-lg text-sm font-medium transition shadow-sm hover:shadow-md"
                   >

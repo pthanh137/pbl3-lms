@@ -8,13 +8,25 @@ from rest_framework import viewsets, generics, status, permissions
 from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework.exceptions import PermissionDenied, ValidationError
+from rest_framework.views import APIView
 from django.db.models import Q, Max, Count
 from django.db.models.functions import Coalesce
 from django.utils import timezone
 from datetime import datetime as dt
 
-from .models import Message, TypingIndicator
-from .serializers import MessageSerializer, ConversationSerializer, TypingIndicatorSerializer
+from .models import Message, TypingIndicator, CourseGroup, GroupMessage, GroupMember
+from .serializers import (
+    MessageSerializer, 
+    ConversationSerializer, 
+    TypingIndicatorSerializer,
+    GroupSerializer,
+    GroupMessageSerializer,
+    CourseGroupSerializer,
+    GroupMemberSerializer
+)
+from .utils import sync_course_group_members
+from courses.models import Course
+from enrollments.models import Enrollment
 from .permissions import IsMessageParticipant
 from users.models import User
 from courses.models import Course
@@ -493,3 +505,272 @@ def get_typing_indicator(request):
             {"detail": "An error occurred while checking typing status."},
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+
+# ============================================
+# GROUP CHAT VIEWS
+# ============================================
+
+def validate_group_access(group, user):
+    """Validate that user is a member of the group."""
+    if not GroupMember.objects.filter(group=group, user=user).exists():
+        raise PermissionDenied("You are not a member of this group.")
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_my_groups(request):
+    """
+    GET /api/messages/groups/my/
+    
+    Get all groups where request.user is a member.
+    Before returning, sync all courses where user is teacher or student.
+    Returns: id, name, course_id, member_count, members list, last_message preview
+    """
+    try:
+        user = request.user
+        
+        # Sync all courses where user is teacher or student
+        courses = Course.objects.filter(teacher=user) | Course.objects.filter(enrollments__student=user)
+        courses = courses.distinct()
+        
+        for course in courses:
+            sync_course_group_members(course)
+        
+        # Get all groups where user is a member (after sync)
+        member_groups = GroupMember.objects.filter(user=user).select_related('group', 'group__course')
+        groups_data = []
+        
+        # Get all group IDs
+        group_ids = [member.group.id for member in member_groups]
+        
+        # Get last message for each group
+        from django.db.models import Max
+        last_messages_map = {}
+        max_date_map = {}
+        
+        if group_ids:
+            # Get max created_at for each group for sorting
+            max_dates = GroupMessage.objects.filter(
+                group_id__in=group_ids
+            ).values('group').annotate(max_date=Max('created_at'))
+            
+            max_date_map = {item['group']: item['max_date'] for item in max_dates}
+            
+            # Get the latest message for each group (using subquery for efficiency)
+            for group_id in group_ids:
+                last_message = GroupMessage.objects.filter(
+                    group_id=group_id
+                ).select_related('sender').order_by('-created_at').first()
+                if last_message:
+                    last_messages_map[group_id] = last_message
+        
+        for member in member_groups:
+            group = member.group
+            last_message = last_messages_map.get(group.id)
+            
+            last_message_preview = None
+            if last_message:
+                # Format last message preview
+                sender_name = last_message.sender.full_name or last_message.sender.email
+                preview_text = last_message.content[:50] + ('...' if len(last_message.content) > 50 else '')
+                last_message_preview = f"{sender_name}: {preview_text}"
+            
+            # Get all members of this group with their details
+            group_members = GroupMember.objects.filter(
+                group=group
+            ).select_related('user').order_by('role', 'user__full_name', 'user__email')
+            
+            members_list = []
+            for gm in group_members:
+                members_list.append({
+                    'id': gm.user.id,
+                    'full_name': gm.user.full_name or '',
+                    'avatar_url': gm.user.avatar_url or None,
+                    'role': gm.role,
+                })
+            
+            groups_data.append({
+                'id': group.id,
+                'name': group.name,
+                'course_id': group.course.id,
+                'member_count': group.members.count(),
+                'members': members_list,
+                'last_message_preview': last_message_preview,
+                'course_thumbnail': group.course.thumbnail_url if group.course.thumbnail_url else None,
+                'last_message_time': max_date_map.get(group.id),  # For sorting
+            })
+        
+        # Sort by last message time (most recent first)
+        groups_data.sort(
+            key=lambda x: x['last_message_time'] if x['last_message_time'] else timezone.make_aware(dt.min),
+            reverse=True
+        )
+        
+        # Remove last_message_time from response (it was only for sorting)
+        for group_data in groups_data:
+            group_data.pop('last_message_time', None)
+        
+        return Response(groups_data)
+    except Exception as e:
+        import traceback
+        print(f"Error in get_my_groups: {e}")
+        print(traceback.format_exc())
+        return Response(
+            {"detail": "An error occurred while loading groups."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['GET'])
+@permission_classes([permissions.IsAuthenticated])
+def get_group_messages(request, group_id):
+    """
+    GET /api/messages/groups/<group_id>/messages/?page=
+    
+    Get paginated messages for a group (50/page, newest first).
+    Only members can view messages.
+    """
+    from rest_framework.pagination import PageNumberPagination
+    
+    try:
+        # Get group
+        try:
+            group = CourseGroup.objects.get(id=group_id)
+        except CourseGroup.DoesNotExist:
+            return Response(
+                {"detail": "Group not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Validate group access
+        validate_group_access(group, request.user)
+        
+        # Get messages (newest first)
+        messages = GroupMessage.objects.filter(
+            group=group
+        ).select_related('sender', 'group').order_by('-created_at')
+        
+        # Pagination
+        paginator = PageNumberPagination()
+        paginator.page_size = 50
+        paginated_messages = paginator.paginate_queryset(messages, request)
+        
+        serializer = GroupMessageSerializer(paginated_messages, many=True, context={'request': request})
+        
+        # Reverse order for display (oldest first)
+        response_data = list(serializer.data)
+        response_data.reverse()
+        
+        return paginator.get_paginated_response(response_data)
+    except PermissionDenied:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error in get_group_messages: {e}")
+        print(traceback.format_exc())
+        return Response(
+            {"detail": "An error occurred while loading messages."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+@api_view(['POST'])
+@permission_classes([permissions.IsAuthenticated])
+def send_group_message(request, group_id):
+    """
+    POST /api/messages/groups/<group_id>/messages/send/
+    
+    Body: { "content": "text..." }
+    
+    Create a GroupMessage.
+    Only members can send messages.
+    """
+    try:
+        # Get group
+        try:
+            group = CourseGroup.objects.get(id=group_id)
+        except CourseGroup.DoesNotExist:
+            return Response(
+                {"detail": "Group not found."},
+                status=status.HTTP_404_NOT_FOUND
+            )
+        
+        # Validate group access
+        validate_group_access(group, request.user)
+        
+        # Validate content
+        content = request.data.get('content', '').strip()
+        if not content:
+            return Response(
+                {"detail": "Message content is required."},
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # Create message
+        message = GroupMessage.objects.create(
+            group=group,
+            sender=request.user,
+            content=content
+        )
+        
+        serializer = GroupMessageSerializer(message, context={'request': request})
+        return Response(serializer.data, status=status.HTTP_201_CREATED)
+    except PermissionDenied:
+        raise
+    except Exception as e:
+        import traceback
+        print(f"Error in send_group_message: {e}")
+        print(traceback.format_exc())
+        return Response(
+            {"detail": "An error occurred while sending message."},
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+class UserCourseGroups(APIView):
+    """
+    GET /api/messages/groups/
+    
+    Get all groups where the current user is a member.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request):
+        """Return all groups where user is a member."""
+        user = request.user
+        
+        # Sync all courses where user is teacher or student before returning
+        courses = Course.objects.filter(teacher=user) | Course.objects.filter(enrollments__student=user)
+        courses = courses.distinct()
+        
+        for course in courses:
+            sync_course_group_members(course)
+        
+        # Get all groups where user is a member
+        groups = CourseGroup.objects.filter(members__user=user).distinct()
+        serializer = CourseGroupSerializer(groups, many=True)
+        return Response(serializer.data)
+
+
+class GroupMembersAPIView(APIView):
+    """
+    GET /api/messages/groups/<group_id>/members/
+    
+    Get all members of a group.
+    Only group members can view the member list.
+    """
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def get(self, request, group_id):
+        """Return list of all group members."""
+        # Check membership before showing list
+        if not GroupMember.objects.filter(group_id=group_id, user=request.user).exists():
+            return Response(
+                {"detail": "Not in this group"}, 
+                status=status.HTTP_403_FORBIDDEN
+            )
+        
+        # Get all members with user details
+        members = GroupMember.objects.filter(group_id=group_id).select_related("user").order_by('-is_admin', 'user__full_name', 'user__email')
+        serializer = GroupMemberSerializer(members, many=True)
+        return Response(serializer.data)

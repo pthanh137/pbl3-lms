@@ -278,6 +278,9 @@ export const assessmentsAPI = {
   deleteTeacherAssignment: (id) => api.delete(`/teacher/assignments/${id}/`),
   getAssignmentSubmissions: (id) => api.get(`/teacher/assignments/${id}/submissions/`),
   gradeSubmission: (id, data) => api.patch(`/teacher/submissions/${id}/grade/`, data),
+  // Quiz submissions
+  getQuizSubmissions: (quizId) => api.get(`/teacher/quizzes/${quizId}/submissions/`),
+  getQuizSubmissionDetail: (submissionId) => api.get(`/teacher/submissions/${submissionId}/`),
   // File upload
   uploadFile: (formData) => {
     return api.post('/upload/', formData, {
@@ -446,6 +449,17 @@ export const messagingAPI = {
     api.post('/messages/typing/', { receiver_id: receiverId, is_typing: isTyping }),
   getTypingStatus: (receiverId) => 
     api.get('/messages/typing/status/', { params: { receiver_id: receiverId } }),
+  // Group chat APIs
+  getMyGroups: () => 
+    api.get('/messages/groups/my/'),
+  getGroups: () => 
+    api.get('/messages/groups/'),
+  getGroupMembers: (groupId) => 
+    api.get(`/messages/groups/${groupId}/members/`),
+  getGroupMessages: (groupId, page = 1) => 
+    api.get(`/messages/groups/${groupId}/messages/`, { params: { page } }),
+  sendGroupMessage: (groupId, content) => 
+    api.post(`/messages/groups/${groupId}/messages/send/`, { content }),
 };
 
 // ============================================

@@ -48,7 +48,7 @@ from .serializers import (
     QuizSerializer, QuizDetailTeacherSerializer, QuizDetailStudentSerializer,
     QuestionSerializer, QuestionCreateSerializer, QuestionPublicSerializer,
     ChoiceSerializer, ChoiceCreateSerializer,
-    StudentQuizAttemptSerializer,
+    StudentQuizAttemptSerializer, TeacherQuizSubmissionSerializer,
     AssignmentSerializer, AssignmentDetailSerializer,
     SubmissionSerializer, SubmissionStudentSerializer,
     QuizSubmitSerializer
@@ -295,7 +295,9 @@ class QuizSubmitAPIView(generics.CreateAPIView):
         serializer.is_valid(raise_exception=True)
         answers_data = serializer.validated_data['answers']
         
-        # Calculate score
+        # Calculate score and correct answers
+        total_questions = quiz.questions.count()
+        correct_answers = 0
         total_points = sum(q.points for q in quiz.questions.all())
         obtained_points = 0
         
@@ -319,23 +321,23 @@ class QuizSubmitAPIView(generics.CreateAPIView):
                 
                 # Check if correct
                 if choice.is_correct:
+                    correct_answers += 1
                     obtained_points += question.points
                     
             except (Question.DoesNotExist, Choice.DoesNotExist):
                 continue
         
-        # Calculate percentage
-        percentage = (obtained_points / total_points * 100) if total_points > 0 else 0
+        # Calculate score as percentage (0-100) for consistency
+        score_percentage = (obtained_points / total_points * 100) if total_points > 0 else 0
         
-        # Update attempt
-        attempt.score = obtained_points
+        # Update attempt with percentage score
+        attempt.score = score_percentage
         attempt.status = 'completed'
         attempt.completed_at = timezone.now()
         attempt.save()
         
         # Create notification for teacher when student completes quiz
         from notifications.models import create_notification
-        score_percentage = (obtained_points / total_points * 100) if total_points > 0 else 0
         create_notification(
             user=quiz.course.teacher,
             title=f"Quiz Completed: {quiz.title}",
@@ -346,9 +348,12 @@ class QuizSubmitAPIView(generics.CreateAPIView):
         )
         
         return Response({
-            'score': obtained_points,
+            'score': score_percentage,
             'total_points': total_points,
-            'percentage': round(percentage, 2)
+            'obtained_points': obtained_points,
+            'correct_answers': correct_answers,
+            'total_questions': total_questions,
+            'percentage': round(score_percentage, 2)
         }, status=status.HTTP_200_OK)
 
 
@@ -365,6 +370,74 @@ class QuizAttemptsMeAPIView(generics.ListAPIView):
             student=self.request.user,
             quiz_id=quiz_id
         ).order_by('-started_at')
+
+
+class TeacherQuizSubmissionsView(generics.ListAPIView):
+    """Get all quiz submissions (attempts) for a quiz (teacher view).
+    
+    Returns a plain JSON array of submissions, not nested in an object.
+    """
+    
+    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    serializer_class = TeacherQuizSubmissionSerializer
+    
+    def get_queryset(self):
+        """Return all completed attempts for this quiz."""
+        quiz_id = self.kwargs['quiz_id']
+        quiz = get_object_or_404(Quiz, id=quiz_id)
+        
+        # Check if teacher owns the course
+        if quiz.course.teacher != self.request.user:
+            raise permissions.PermissionDenied("You can only view submissions for your own quizzes.")
+        
+        return StudentQuizAttempt.objects.filter(
+            quiz_id=quiz_id,
+            status='completed'
+        ).select_related('student', 'quiz').prefetch_related(
+            'answers__selected_choice'
+        ).order_by('-completed_at')
+    
+    def list(self, request, *args, **kwargs):
+        """Override list to ALWAYS return a plain array, not nested in an object."""
+        try:
+            queryset = self.filter_queryset(self.get_queryset())
+            serializer = self.get_serializer(queryset, many=True, context={'request': request})
+            # CRITICAL: Return serializer.data directly as a plain array
+            # This ensures the response is always [ {...}, {...} ] not {results: [...]}
+            return Response(serializer.data)
+        except Exception as e:
+            import logging
+            import traceback
+            logger = logging.getLogger(__name__)
+            logger.error(f"Error in TeacherQuizSubmissionsView.list: {str(e)}")
+            logger.error(traceback.format_exc())
+            # Even on error, return an empty array to maintain consistency
+            return Response([], status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+
+class TeacherQuizSubmissionDetailView(generics.RetrieveAPIView):
+    """Get detailed view of a quiz submission (attempt) for teacher."""
+    
+    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    serializer_class = TeacherQuizSubmissionSerializer
+    
+    def get_object(self):
+        """Return quiz attempt if teacher owns the quiz."""
+        attempt_id = self.kwargs['id']
+        attempt = get_object_or_404(
+            StudentQuizAttempt.objects.select_related('quiz', 'quiz__course', 'student').prefetch_related(
+                'answers__question',
+                'answers__selected_choice',
+                'quiz__questions__choices'
+            ),
+            id=attempt_id
+        )
+        
+        # Check if teacher owns the course
+        if attempt.quiz.course.teacher != self.request.user:
+            raise permissions.PermissionDenied("You can only view submissions for your own quizzes.")
+        
+        return attempt
 
 
 # ==================== TEACHER ASSIGNMENT MANAGEMENT ====================
