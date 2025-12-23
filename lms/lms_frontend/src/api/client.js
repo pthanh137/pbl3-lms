@@ -249,6 +249,7 @@ export const enrollmentsAPI = {
 
 export const lessonsAPI = {
   getById: (id) => api.get(`/lessons/${id}/`),
+  replaceVideo: (id) => api.post(`/lessons/${id}/replace-video/`),
 };
 
 // Teacher Quiz & Assignment APIs
@@ -484,6 +485,28 @@ export const notificationAPI = {
   markAsRead: (notificationId) => api.post(`/notifications/${notificationId}/read/`),
   markAllRead: () => api.post('/notifications/mark-all-read/'),
   getUnreadCount: () => api.get('/notifications/unread-count/'),
+};
+
+// ============================================
+// ADMIN APIs
+// ============================================
+export const adminAPI = {
+  // Teachers
+  getTeachers: () => api.get('/admin/teachers/'),
+  getTeacherDetail: (id) => api.get(`/admin/teachers/${id}/`),
+  approveTeacher: (id) => api.patch(`/admin/teachers/${id}/approve/`),
+  
+  // Students
+  getStudents: () => api.get('/admin/students/'),
+  getStudentDetail: (id) => api.get(`/admin/students/${id}/`),
+  
+  // Courses
+  getCourses: () => api.get('/admin/courses/'),
+  getCourseDetail: (id) => api.get(`/admin/courses/${id}/`),
+  
+  // Revenue
+  getRevenue: () => api.get('/admin/revenue/'),
+  getRevenueAnalytics: () => api.get('/admin/revenue/analytics/'),
 };
 
 // Export the stable axios instance

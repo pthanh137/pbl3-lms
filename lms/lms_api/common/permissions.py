@@ -29,4 +29,17 @@ class IsOwnerOrReadOnly(permissions.BasePermission):
         return obj.teacher == request.user
 
 
+class IsAdmin(permissions.BasePermission):
+    """
+    Permission to only allow users with role='admin' to access.
+    """
+    
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated and
+            request.user.role == 'admin'
+        )
+
+
 

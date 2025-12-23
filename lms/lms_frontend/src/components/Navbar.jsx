@@ -185,6 +185,11 @@ const Navbar = () => {
               {/* Notification Bell */}
               <NotificationBell />
               
+              {user?.role === 'admin' && (
+                <Link to="/admin/dashboard" className="text-slate-700 hover:text-primary-500 font-medium text-sm transition-colors">
+                  Admin Dashboard
+                </Link>
+              )}
               {user?.role === 'teacher' && (
                 <>
                   <Link to="/teacher/dashboard" className="text-slate-700 hover:text-primary-500 font-medium text-sm transition-colors">

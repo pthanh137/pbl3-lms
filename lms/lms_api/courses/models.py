@@ -75,6 +75,33 @@ class Lesson(models.Model):
         ordering = ['sort_order', 'id']
         unique_together = ['section', 'sort_order']
     
+    def save(self, *args, **kwargs):
+        """Normalize video_url before saving."""
+        if self.video_url:
+            from .utils import normalize_video_url
+            self.video_url = normalize_video_url(self.video_url)
+        super().save(*args, **kwargs)
+    
     def __str__(self):
         return f"{self.section.title} - {self.title}"
 
+
+class VideoReplacementLog(models.Model):
+    """Log model for video replacements."""
+    
+    lesson = models.ForeignKey(
+        Lesson,
+        on_delete=models.CASCADE,
+        related_name='video_replacements'
+    )
+    old_video_url = models.URLField()
+    new_video_url = models.URLField()
+    replaced_at = models.DateTimeField(auto_now_add=True)
+    reason = models.CharField(max_length=255, blank=True, help_text="Reason for replacement (e.g., 'video_unavailable')")
+    
+    class Meta:
+        db_table = 'video_replacement_logs'
+        ordering = ['-replaced_at']
+    
+    def __str__(self):
+        return f"Lesson {self.lesson.id} - Replaced at {self.replaced_at}"

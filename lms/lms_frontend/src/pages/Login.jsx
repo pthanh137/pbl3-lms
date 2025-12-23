@@ -28,6 +28,8 @@ const Login = () => {
         // Clear the stored courseId
         localStorage.removeItem('redirectCourseId');
         navigate(`/courses/${redirectCourseId}`);
+      } else if (currentUser?.role === 'admin') {
+        navigate('/admin/dashboard');
       } else if (currentUser?.role === 'teacher') {
         navigate('/teacher/dashboard');
       } else {

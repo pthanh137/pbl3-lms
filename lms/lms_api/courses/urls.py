@@ -1,6 +1,12 @@
 from django.urls import path, include
 from rest_framework.routers import DefaultRouter
-from .views import CourseViewSet, CourseCurriculumAPIView, LessonDetailAPIView, CourseCategoriesListAPIView
+from .views import (
+    CourseViewSet, 
+    CourseCurriculumAPIView, 
+    LessonDetailAPIView, 
+    CourseCategoriesListAPIView,
+    ReplaceLessonVideoAPIView
+)
 from .teacher_views import TeacherCourseViewSet, TeacherSectionViewSet, TeacherLessonViewSet
 from enrollments.views import (
     EnrollCourseAPIView, 
@@ -30,6 +36,7 @@ urlpatterns = [
     path('courses/<int:course_id>/certificate/issue/', IssueCertificateAPIView.as_view(), name='certificate-issue'),
     path('courses/<int:course_id>/certificate/me/', MyCertificateAPIView.as_view(), name='certificate-me'),
     path('lessons/<int:pk>/', LessonDetailAPIView.as_view(), name='lesson-detail'),
+    path('lessons/<int:lesson_id>/replace-video/', ReplaceLessonVideoAPIView.as_view(), name='lesson-replace-video'),
     path('lessons/<int:lesson_id>/complete/', CompleteLessonAPIView.as_view(), name='lesson-complete'),
     # Include routers
     path('', include(router.urls)),

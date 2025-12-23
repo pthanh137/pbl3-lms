@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef } from 'react';
-import { enrollmentsAPI } from '../../api/client';
+import { enrollmentsAPI, lessonsAPI } from '../../api/client';
 
 /**
  * Premium Udemy-style Video Player Component
@@ -38,9 +38,9 @@ const LessonPlayer = ({
 
   const videoRef = useRef(null);
   const containerRef = useRef(null);
-  const playerRef = useRef(null); // For YouTube IFrame API
-  const isYouTubeRef = useRef(false);
   const progressCheckIntervalRef = useRef(null);
+  const [videoError, setVideoError] = useState(false);
+  const [replacingVideo, setReplacingVideo] = useState(false);
 
   const playbackSpeeds = [0.5, 0.75, 1, 1.25, 1.5, 1.75, 2];
 
@@ -50,156 +50,163 @@ const LessonPlayer = ({
     return url.includes('youtube.com') || url.includes('youtu.be');
   };
 
-  // Get YouTube video ID
+  // Check if URL is already in embed format
+  const isEmbedUrl = (url) => {
+    if (!url) return false;
+    return url.includes('youtube.com/embed/');
+  };
+
+  // Get YouTube video ID from any YouTube URL format
   const getYouTubeVideoId = (url) => {
     if (!url) return null;
     
-    if (url.includes('youtube.com/watch?v=')) {
-      return url.split('v=')[1]?.split('&')[0];
-    }
-    if (url.includes('youtu.be/')) {
-      return url.split('youtu.be/')[1]?.split('?')[0];
-    }
+    // If already embed URL, extract ID
     if (url.includes('youtube.com/embed/')) {
-      return url.split('embed/')[1]?.split('?')[0];
+      const match = url.match(/youtube\.com\/embed\/([a-zA-Z0-9_-]+)/);
+      return match ? match[1] : null;
     }
+    
+    // If watch URL
+    if (url.includes('youtube.com/watch?v=')) {
+      const match = url.match(/[?&]v=([a-zA-Z0-9_-]+)/);
+      return match ? match[1] : null;
+    }
+    
+    // If short URL
+    if (url.includes('youtu.be/')) {
+      const match = url.match(/youtu\.be\/([a-zA-Z0-9_-]+)/);
+      return match ? match[1] : null;
+    }
+    
     return null;
   };
 
-  // Load YouTube IFrame API
-  useEffect(() => {
-    if (!videoUrl || !isYouTubeUrl(videoUrl) || !containerRef.current) return;
+  // Get embed URL for YouTube (backend should already normalize, but double-check)
+  const getYouTubeEmbedUrl = (url) => {
+    if (!url) return null;
+    
+    // If already embed URL, return as is
+    if (isEmbedUrl(url)) {
+      return url;
+    }
+    
+    // Extract video ID and create embed URL
+    const videoId = getYouTubeVideoId(url);
+    if (videoId) {
+      return `https://www.youtube.com/embed/${videoId}`;
+    }
+    
+    return url;
+  };
 
-    const initialize = () => {
-      if (window.YT && window.YT.Player) {
-        initializeYouTubePlayer();
-      }
-    };
+  // Note: We use simple iframe for YouTube instead of YouTube IFrame API
+  // This is simpler and more reliable. The backend normalizes URLs to embed format.
+  // For MP4 videos, we use HTML5 video player with custom controls.
 
-    // Check if YouTube API is already loaded
-    if (window.YT && window.YT.Player) {
-      initialize();
-      return;
+  // Get saved playback position from localStorage
+  const getSavedPlaybackPosition = () => {
+    if (!lesson?.id) return 0;
+    const saved = localStorage.getItem(`lesson_${lesson.id}_position`);
+    return saved ? parseFloat(saved) : 0;
+  };
+
+  // Save playback position to localStorage
+  const savePlaybackPosition = (time) => {
+    if (!lesson?.id) return;
+    localStorage.setItem(`lesson_${lesson.id}_position`, time.toString());
+  };
+
+  // Start tracking progress
+  const startProgressTracking = () => {
+    if (progressCheckIntervalRef.current) {
+      clearInterval(progressCheckIntervalRef.current);
     }
 
-    // Check if script is already being loaded
-    if (document.querySelector('script[src="https://www.youtube.com/iframe_api"]')) {
-      // Wait for API to be ready
-      const checkInterval = setInterval(() => {
-        if (window.YT && window.YT.Player) {
-          clearInterval(checkInterval);
-          initialize();
+    // Only track progress for MP4 videos (YouTube iframe doesn't support this without API)
+    progressCheckIntervalRef.current = setInterval(() => {
+      if (videoRef.current && !isYouTubeUrl(videoUrl)) {
+        const currentTime = videoRef.current.currentTime;
+        const duration = videoRef.current.duration;
+        if (currentTime !== undefined && duration !== undefined) {
+          checkCompletion(currentTime, duration);
         }
-      }, 100);
-      return () => clearInterval(checkInterval);
+      }
+    }, 500);
+  };
+
+  // Stop tracking progress
+  const stopProgressTracking = () => {
+    if (progressCheckIntervalRef.current) {
+      clearInterval(progressCheckIntervalRef.current);
+      progressCheckIntervalRef.current = null;
     }
+  };
 
-    // Load YouTube IFrame API
-    const tag = document.createElement('script');
-    tag.src = 'https://www.youtube.com/iframe_api';
-    const firstScriptTag = document.getElementsByTagName('script')[0];
-    firstScriptTag.parentNode.insertBefore(tag, firstScriptTag);
-
-    // Set up global callback
-    const originalCallback = window.onYouTubeIframeAPIReady;
-    window.onYouTubeIframeAPIReady = () => {
-      if (originalCallback) originalCallback();
-      initialize();
-    };
-
-    return () => {
-      stopProgressTracking();
-      if (playerRef.current) {
-        try {
-          playerRef.current.destroy();
-        } catch (e) {
-          // Ignore cleanup errors
-        }
-        playerRef.current = null;
-        isYouTubeRef.current = false;
-      }
-    };
-  }, [videoUrl]);
-
-  const initializeYouTubePlayer = () => {
-    if (!videoUrl || !containerRef.current) return;
-
-    const videoId = getYouTubeVideoId(videoUrl);
-    if (!videoId) return;
-
-    // Destroy existing player if any
-    if (playerRef.current) {
-      try {
-        playerRef.current.destroy();
-      } catch (e) {
-        // Ignore errors during cleanup
-      }
-      playerRef.current = null;
+  // Check if lesson should be auto-completed (90% watched)
+  const checkCompletion = (currentTime, totalDuration) => {
+    if (isCompleted || !totalDuration || totalDuration === 0) return;
+    
+    const progress = (currentTime / totalDuration) * 100;
+    if (progress >= 90 && !isCompleted) {
+      handleComplete();
     }
+  };
 
-    isYouTubeRef.current = true;
+  // Handle video end
+  const handleVideoEnd = () => {
+    if (!isCompleted) {
+      handleComplete();
+    }
+    if (onNextLesson) {
+      setTimeout(() => {
+        onNextLesson();
+      }, 2000);
+    }
+  };
 
-    // Wait a bit for DOM to be ready
-    setTimeout(() => {
-      try {
-        playerRef.current = new window.YT.Player('youtube-player', {
-          videoId: videoId,
-          width: '100%',
-          height: '100%',
-          playerVars: {
-            autoplay: 0,
-            controls: 0,
-            modestbranding: 1,
-            rel: 0,
-            showinfo: 0,
-            iv_load_policy: 3,
-            enablejsapi: 1,
-          },
-          events: {
-            onReady: (event) => {
-              try {
-                const savedTime = getSavedPlaybackPosition();
-                const duration = event.target.getDuration();
-                if (duration && savedTime > 0 && savedTime < duration) {
-                  event.target.seekTo(savedTime, true);
-                }
-                if (duration) {
-                  setDuration(duration);
-                }
-                const rate = event.target.getPlaybackRate();
-                if (rate) {
-                  setPlaybackRate(rate);
-                }
-              } catch (e) {
-                console.log('Error in onReady:', e);
-              }
-            },
-            onStateChange: (event) => {
-              try {
-                if (event.data === window.YT.PlayerState.PLAYING) {
-                  setIsPlaying(true);
-                  startProgressTracking();
-                } else if (event.data === window.YT.PlayerState.PAUSED) {
-                  setIsPlaying(false);
-                  stopProgressTracking();
-                } else if (event.data === window.YT.PlayerState.ENDED) {
-                  setIsPlaying(false);
-                  stopProgressTracking();
-                  handleVideoEnd();
-                }
-              } catch (e) {
-                console.log('Error in onStateChange:', e);
-              }
-            },
-            onError: (event) => {
-              console.error('YouTube player error:', event.data);
-            },
-          },
-        });
-      } catch (error) {
-        console.error('Error initializing YouTube player:', error);
+  // Handle complete
+  const handleComplete = async () => {
+    if (isCompleted || completing || !lesson?.id) return;
+
+    try {
+      setCompleting(true);
+      await enrollmentsAPI.completeLesson(lesson.id);
+      setIsCompleted(true);
+      if (onComplete) {
+        onComplete();
       }
-    }, 200);
+    } catch (err) {
+      console.error('Error completing lesson:', err);
+      alert(err.response?.data?.detail || 'Failed to mark lesson as completed.');
+    } finally {
+      setCompleting(false);
+    }
+  };
+
+  // Handle video error - replace video automatically
+  const handleVideoError = async () => {
+    if (!lesson?.id || replacingVideo || videoError) return;
+
+    try {
+      setVideoError(true);
+      setReplacingVideo(true);
+
+      // Call API to replace video
+      const response = await lessonsAPI.replaceVideo(lesson.id);
+
+      if (response.data?.success && response.data?.lesson) {
+        // Video replaced successfully - reload page to get new video URL
+        setTimeout(() => {
+          window.location.reload();
+        }, 1000);
+      } else {
+        // Could not replace video
+        setReplacingVideo(false);
+      }
+    } catch (err) {
+      console.error('Error replacing video:', err);
+      setReplacingVideo(false);
+    }
   };
 
   // Initialize HTML5 video player for non-YouTube videos
@@ -211,7 +218,7 @@ const LessonPlayer = ({
 
     const handleLoadedMetadata = () => {
       setDuration(video.duration);
-      if (savedTime > 0) {
+      if (savedTime > 0 && savedTime < video.duration) {
         video.currentTime = savedTime;
       }
       video.playbackRate = playbackRate;
@@ -258,97 +265,16 @@ const LessonPlayer = ({
       video.removeEventListener('ended', handleEnded);
       video.removeEventListener('durationchange', handleDurationChange);
     };
-  }, [videoUrl, playbackRate]);
-
-  // Get saved playback position from localStorage
-  const getSavedPlaybackPosition = () => {
-    if (!lesson?.id) return 0;
-    const saved = localStorage.getItem(`lesson_${lesson.id}_position`);
-    return saved ? parseFloat(saved) : 0;
-  };
-
-  // Save playback position to localStorage
-  const savePlaybackPosition = (time) => {
-    if (!lesson?.id) return;
-    localStorage.setItem(`lesson_${lesson.id}_position`, time.toString());
-  };
-
-  // Start tracking progress
-  const startProgressTracking = () => {
-    if (progressCheckIntervalRef.current) {
-      clearInterval(progressCheckIntervalRef.current);
-    }
-
-    progressCheckIntervalRef.current = setInterval(() => {
-      if (isYouTubeRef.current && playerRef.current) {
-        try {
-          const currentTime = playerRef.current.getCurrentTime();
-          const duration = playerRef.current.getDuration();
-          if (currentTime !== undefined && duration !== undefined) {
-            setCurrentTime(currentTime);
-            savePlaybackPosition(currentTime);
-            checkCompletion(currentTime, duration);
-          }
-        } catch (e) {
-          // Player might not be ready yet
-        }
-      } else if (videoRef.current) {
-        const currentTime = videoRef.current.currentTime;
-        const duration = videoRef.current.duration;
-        if (currentTime !== undefined && duration !== undefined) {
-          checkCompletion(currentTime, duration);
-        }
-      }
-    }, 500);
-  };
-
-  // Stop tracking progress
-  const stopProgressTracking = () => {
-    if (progressCheckIntervalRef.current) {
-      clearInterval(progressCheckIntervalRef.current);
-      progressCheckIntervalRef.current = null;
-    }
-  };
-
-  // Check if lesson should be auto-completed (90% watched)
-  const checkCompletion = (currentTime, totalDuration) => {
-    if (isCompleted || !totalDuration || totalDuration === 0) return;
-    
-    const progress = (currentTime / totalDuration) * 100;
-    if (progress >= 90 && !isCompleted) {
-      handleComplete();
-    }
-  };
-
-  // Handle video end
-  const handleVideoEnd = () => {
-    if (!isCompleted) {
-      handleComplete();
-    }
-    if (onNextLesson) {
-      setTimeout(() => {
-        onNextLesson();
-      }, 2000);
-    }
-  };
+  }, [videoUrl, playbackRate, isCompleted, lesson?.id, onNextLesson, onComplete]);
 
   // Toggle play/pause
   const togglePlayPause = (e) => {
     if (e) {
       e.stopPropagation();
     }
-    if (isYouTubeRef.current && playerRef.current) {
-      try {
-        const state = playerRef.current.getPlayerState();
-        if (state === window.YT.PlayerState.PLAYING) {
-          playerRef.current.pauseVideo();
-        } else {
-          playerRef.current.playVideo();
-        }
-      } catch (e) {
-        console.log('Error toggling YouTube player:', e);
-      }
-    } else if (videoRef.current) {
+    // For YouTube, iframe handles its own controls
+    // For MP4, use video element
+    if (videoRef.current && !isYouTubeUrl(videoUrl)) {
       if (isPlaying) {
         videoRef.current.pause();
       } else {
@@ -359,13 +285,9 @@ const LessonPlayer = ({
 
   // Seek to specific time
   const seekTo = (time) => {
-    if (isYouTubeRef.current && playerRef.current) {
-      try {
-        playerRef.current.seekTo(time, true);
-      } catch (e) {
-        console.log('Error seeking YouTube player:', e);
-      }
-    } else if (videoRef.current) {
+    // For YouTube, iframe doesn't support programmatic seeking without API
+    // For MP4, use video element
+    if (videoRef.current && !isYouTubeUrl(videoUrl)) {
       videoRef.current.currentTime = time;
     }
   };
@@ -375,13 +297,9 @@ const LessonPlayer = ({
     setPlaybackRate(rate);
     setShowSpeedMenu(false);
     
-    if (isYouTubeRef.current && playerRef.current) {
-      try {
-        playerRef.current.setPlaybackRate(rate);
-      } catch (e) {
-        console.log('Error setting YouTube playback rate:', e);
-      }
-    } else if (videoRef.current) {
+    // For YouTube, iframe doesn't support playback rate control without API
+    // For MP4, use video element
+    if (videoRef.current && !isYouTubeUrl(videoUrl)) {
       videoRef.current.playbackRate = rate;
     }
   };
@@ -465,25 +383,6 @@ const LessonPlayer = ({
       }
     };
   }, [isPlaying, controlsTimeout]);
-
-  // Handle complete
-  const handleComplete = async () => {
-    if (isCompleted || completing || !lesson?.id) return;
-
-    try {
-      setCompleting(true);
-      await enrollmentsAPI.completeLesson(lesson.id);
-      setIsCompleted(true);
-      if (onComplete) {
-        onComplete();
-      }
-    } catch (err) {
-      console.error('Error completing lesson:', err);
-      alert(err.response?.data?.detail || 'Failed to mark lesson as completed.');
-    } finally {
-      setCompleting(false);
-    }
-  };
 
   // Format time
   const formatTime = (seconds) => {
@@ -571,8 +470,35 @@ const LessonPlayer = ({
     >
       {/* Video Container */}
       <div className="relative w-full aspect-video">
-        {isYouTubeUrl(videoUrl) ? (
-          <div id="youtube-player" className="w-full h-full"></div>
+        {videoError && !replacingVideo ? (
+          // Show message when video is unavailable and no replacement found
+          <div className="w-full h-full bg-slate-900 rounded-xl flex flex-col items-center justify-center text-white p-6">
+            <p className="text-lg font-medium mb-4">Video bài giảng đang được cập nhật</p>
+            <p className="text-sm text-slate-400 mb-4">Vui lòng quay lại sau.</p>
+          </div>
+        ) : !videoUrl ? (
+          // Show message when lesson has no video
+          <div className="w-full h-full bg-slate-900 rounded-xl flex flex-col items-center justify-center text-white p-6">
+            <p className="text-lg font-medium mb-4">Video bài giảng đang được cập nhật</p>
+            <p className="text-sm text-slate-400 mb-4">Vui lòng quay lại sau.</p>
+          </div>
+        ) : isYouTubeUrl(videoUrl) ? (
+          // Use iframe for YouTube (simpler and more reliable)
+          // Backend should already normalize to embed URL, but we double-check here
+          <iframe
+            id="youtube-player"
+            src={getYouTubeEmbedUrl(videoUrl)}
+            className="w-full h-full"
+            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+            allowFullScreen
+            title={lesson?.title || 'Video'}
+            frameBorder="0"
+            style={{ border: 'none' }}
+            onLoad={() => {
+              // Reset error state when iframe loads successfully
+              setVideoError(false);
+            }}
+          />
         ) : (
           <video
             ref={videoRef}
@@ -580,6 +506,16 @@ const LessonPlayer = ({
             className="w-full h-full object-contain"
             onClick={togglePlayPause}
             playsInline
+            controls={false}
+            onError={() => {
+              if (!replacingVideo && !videoError) {
+                handleVideoError();
+              }
+            }}
+            onLoadedData={() => {
+              // Reset error state when video loads successfully
+              setVideoError(false);
+            }}
           />
         )}
 
@@ -598,113 +534,117 @@ const LessonPlayer = ({
           }`}
           onClick={(e) => e.stopPropagation()}
         >
-          {/* Progress Bar */}
-          <div className="px-4 pt-2 pb-1" onClick={(e) => e.stopPropagation()}>
-            <div
-              className="h-1 bg-slate-600 rounded-full cursor-pointer group/progress"
-              onClick={(e) => {
-                e.stopPropagation();
-                const rect = e.currentTarget.getBoundingClientRect();
-                const clickX = e.clientX - rect.left;
-                const percentage = clickX / rect.width;
-                const newTime = percentage * duration;
-                seekTo(newTime);
-              }}
-            >
+          {/* Progress Bar - Only for MP4 videos */}
+          {!isYouTubeUrl(videoUrl) && (
+            <div className="px-4 pt-2 pb-1" onClick={(e) => e.stopPropagation()}>
               <div
-                className="h-full bg-blue-600 rounded-full transition-all"
-                style={{ width: `${progressPercentage}%` }}
-              >
-                <div className="h-full w-3 bg-blue-500 rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity -translate-x-1/2 translate-y-[-2px]" />
-              </div>
-            </div>
-          </div>
-
-          {/* Controls */}
-          <div className="px-4 py-3 flex items-center justify-between gap-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-3">
-              {/* Play/Pause Button */}
-              <button
+                className="h-1 bg-slate-600 rounded-full cursor-pointer group/progress"
                 onClick={(e) => {
                   e.stopPropagation();
-                  togglePlayPause(e);
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const clickX = e.clientX - rect.left;
+                  const percentage = clickX / rect.width;
+                  const newTime = percentage * duration;
+                  seekTo(newTime);
                 }}
-                className="text-white hover:text-blue-400 transition p-1 z-30 relative"
-                aria-label={isPlaying ? 'Pause' : 'Play'}
               >
-                {isPlaying ? (
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
-                  </svg>
-                ) : (
-                  <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
-                    <path d="M8 5v14l11-7z" />
-                  </svg>
-                )}
-              </button>
-
-              {/* Time Display */}
-              <div className="text-white text-sm font-medium">
-                {formatTime(currentTime)} / {formatTime(duration)}
+                <div
+                  className="h-full bg-blue-600 rounded-full transition-all"
+                  style={{ width: `${progressPercentage}%` }}
+                >
+                  <div className="h-full w-3 bg-blue-500 rounded-full opacity-0 group-hover/progress:opacity-100 transition-opacity -translate-x-1/2 translate-y-[-2px]" />
+                </div>
               </div>
             </div>
+          )}
 
-            <div className="flex items-center gap-2">
-              {/* Playback Speed */}
-              <div className="relative z-30">
+          {/* Controls - Only show for MP4 videos (YouTube has its own controls) */}
+          {!isYouTubeUrl(videoUrl) && (
+            <div className="px-4 py-3 flex items-center justify-between gap-4" onClick={(e) => e.stopPropagation()}>
+              <div className="flex items-center gap-3">
+                {/* Play/Pause Button */}
                 <button
                   onClick={(e) => {
                     e.stopPropagation();
-                    setShowSpeedMenu(!showSpeedMenu);
+                    togglePlayPause(e);
                   }}
-                  className="text-white hover:text-blue-400 transition px-2 py-1 text-sm font-medium"
+                  className="text-white hover:text-blue-400 transition p-1 z-30 relative"
+                  aria-label={isPlaying ? 'Pause' : 'Play'}
                 >
-                  {playbackRate}x
+                  {isPlaying ? (
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M6 4h4v16H6V4zm8 0h4v16h-4V4z" />
+                    </svg>
+                  ) : (
+                    <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24">
+                      <path d="M8 5v14l11-7z" />
+                    </svg>
+                  )}
                 </button>
-                {showSpeedMenu && (
-                  <div className="absolute bottom-full right-0 mb-2 bg-slate-800 rounded-lg shadow-lg overflow-hidden z-10">
-                    {playbackSpeeds.map((speed) => (
-                      <button
-                        key={speed}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          changePlaybackRate(speed);
-                        }}
-                        className={`block w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-700 transition ${
-                          playbackRate === speed ? 'bg-blue-600' : ''
-                        }`}
-                      >
-                        {speed}x
-                      </button>
-                    ))}
-                  </div>
-                )}
+
+                {/* Time Display */}
+                <div className="text-white text-sm font-medium">
+                  {formatTime(currentTime)} / {formatTime(duration)}
+                </div>
               </div>
 
-              {/* Fullscreen Button */}
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  toggleFullscreen();
-                }}
-                className="text-white hover:text-blue-400 transition p-1 z-30 relative"
-                aria-label="Fullscreen"
-              >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path
-                    strokeLinecap="round"
-                    strokeLinejoin="round"
-                    strokeWidth={2}
-                    d={isFullscreen ? "M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" : "M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"}
-                  />
-                </svg>
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Playback Speed */}
+                <div className="relative z-30">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setShowSpeedMenu(!showSpeedMenu);
+                    }}
+                    className="text-white hover:text-blue-400 transition px-2 py-1 text-sm font-medium"
+                  >
+                    {playbackRate}x
+                  </button>
+                  {showSpeedMenu && (
+                    <div className="absolute bottom-full right-0 mb-2 bg-slate-800 rounded-lg shadow-lg overflow-hidden z-10">
+                      {playbackSpeeds.map((speed) => (
+                        <button
+                          key={speed}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            changePlaybackRate(speed);
+                          }}
+                          className={`block w-full text-left px-4 py-2 text-sm text-white hover:bg-slate-700 transition ${
+                            playbackRate === speed ? 'bg-blue-600' : ''
+                          }`}
+                        >
+                          {speed}x
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                {/* Fullscreen Button */}
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    toggleFullscreen();
+                  }}
+                  className="text-white hover:text-blue-400 transition p-1 z-30 relative"
+                  aria-label="Fullscreen"
+                >
+                  <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d={isFullscreen ? "M9 9V4.5M9 9H4.5M9 9L3.75 3.75M9 15v4.5M9 15H4.5M9 15l-5.25 5.25M15 9h4.5M15 9V4.5M15 9l5.25-5.25M15 15h4.5M15 15v4.5m0-4.5l5.25 5.25" : "M4 8V4m0 0h4M4 4l5 5m11-1V4m0 0h-4m4 0l-5 5M4 16v4m0 0h4m-4 0l5-5m11 5l-5-5m5 5v-4m0 4h-4"}
+                    />
+                  </svg>
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Center Play Button (when paused) */}
-        {!isPlaying && (
+        {/* Center Play Button (when paused) - Only for MP4 videos */}
+        {!isPlaying && !isYouTubeUrl(videoUrl) && (
           <div className="absolute inset-0 flex items-center justify-center z-30 pointer-events-none">
             <button
               onClick={(e) => {

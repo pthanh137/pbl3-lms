@@ -1,9 +1,11 @@
-from rest_framework import viewsets, generics, filters, permissions
+from rest_framework import viewsets, generics, filters, permissions, status
 from rest_framework.permissions import AllowAny
 from rest_framework.exceptions import PermissionDenied
 from rest_framework.views import APIView
 from rest_framework.response import Response
+from rest_framework.decorators import action
 from django.db.models import Prefetch
+from django.shortcuts import get_object_or_404
 from .models import Course, Section, Lesson
 from enrollments.models import Enrollment
 from .serializers import (
@@ -12,6 +14,7 @@ from .serializers import (
     CourseCurriculumSerializer,
     LessonSerializer
 )
+from .utils import check_video_available, replace_lesson_video
 
 
 class CourseViewSet(viewsets.ReadOnlyModelViewSet):
@@ -121,6 +124,71 @@ class LessonDetailAPIView(generics.RetrieveAPIView):
             )
         
         return lesson
+
+
+class ReplaceLessonVideoAPIView(APIView):
+    """
+    Replace lesson video if it's unavailable.
+    Called by frontend when video fails to load.
+    
+    POST /api/lessons/{lesson_id}/replace-video/
+    """
+    
+    permission_classes = [permissions.IsAuthenticated]
+    
+    def post(self, request, lesson_id):
+        """Replace video for a lesson."""
+        lesson = get_object_or_404(
+            Lesson.objects.select_related('section', 'section__course'),
+            pk=lesson_id
+        )
+        
+        # Check enrollment
+        course = lesson.section.course
+        is_enrolled = Enrollment.objects.filter(
+            student=request.user,
+            course=course
+        ).exists()
+        
+        if not is_enrolled:
+            raise PermissionDenied(
+                detail='You must enroll in this course first to access lessons.'
+            )
+        
+        # Check if video is actually unavailable
+        if lesson.video_url and check_video_available(lesson.video_url):
+            # Video is available, no need to replace
+            return Response({
+                'success': False,
+                'message': 'Video is still available',
+                'video_url': lesson.video_url
+            }, status=status.HTTP_200_OK)
+        
+        # Get used video IDs to avoid duplicates
+        from .utils import get_used_video_ids
+        used_video_ids = get_used_video_ids(exclude_lesson_id=lesson.id)
+        
+        # Replace video (ensuring uniqueness)
+        success = replace_lesson_video(
+            lesson, 
+            reason='frontend_error_triggered',
+            used_video_ids=used_video_ids
+        )
+        
+        if success:
+            # Refresh lesson from database
+            lesson.refresh_from_db()
+            serializer = LessonSerializer(lesson, context={'request': request})
+            return Response({
+                'success': True,
+                'message': 'Video replaced successfully',
+                'lesson': serializer.data
+            }, status=status.HTTP_200_OK)
+        else:
+            return Response({
+                'success': False,
+                'message': 'Could not find replacement video'
+            }, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class CourseCategoriesListAPIView(APIView):

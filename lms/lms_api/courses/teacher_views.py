@@ -12,6 +12,7 @@ from .serializers import (
     LessonCreateUpdateSerializer,
 )
 from common.permissions import IsTeacher, IsOwnerOrReadOnly
+from .utils import normalize_video_url
 
 
 class TeacherCourseViewSet(viewsets.ModelViewSet):
@@ -147,6 +148,11 @@ class TeacherLessonViewSet(viewsets.ModelViewSet):
         if section.course.teacher != self.request.user:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("You can only create lessons for sections in your own courses.")
+        
+        # Normalize video_url before saving
+        if 'video_url' in serializer.validated_data and serializer.validated_data['video_url']:
+            serializer.validated_data['video_url'] = normalize_video_url(serializer.validated_data['video_url'])
+        
         lesson = serializer.save()
         
         # Create notifications for enrolled students when lesson is created
@@ -167,6 +173,11 @@ class TeacherLessonViewSet(viewsets.ModelViewSet):
         if section.course.teacher != self.request.user:
             from rest_framework.exceptions import PermissionDenied
             raise PermissionDenied("You can only update lessons for sections in your own courses.")
+        
+        # Normalize video_url before saving
+        if 'video_url' in serializer.validated_data and serializer.validated_data['video_url']:
+            serializer.validated_data['video_url'] = normalize_video_url(serializer.validated_data['video_url'])
+        
         lesson = serializer.save()
         
         # Create notifications for enrolled students when lesson is updated

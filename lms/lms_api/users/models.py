@@ -42,6 +42,7 @@ class User(AbstractUser):
     email = models.EmailField(unique=True, db_index=True)
     full_name = models.CharField(max_length=255, blank=True)
     role = models.CharField(max_length=20, choices=ROLE_CHOICES, default='student')
+    is_approved = models.BooleanField(default=False, help_text="For teachers: whether admin has approved this teacher")
     avatar_url = models.URLField(blank=True, null=True)
     bio = models.TextField(blank=True)
     headline = models.CharField(max_length=255, blank=True)

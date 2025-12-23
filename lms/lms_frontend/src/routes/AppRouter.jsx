@@ -44,6 +44,12 @@ import TeacherAnnouncementDetail from '../pages/TeacherAnnouncementDetail';
 import StudentAnnouncementList from '../pages/StudentAnnouncementList';
 import StudentAnnouncementDetail from '../pages/StudentAnnouncementDetail';
 import NotificationPage from '../pages/NotificationPage';
+import AdminDashboard from '../pages/admin/AdminDashboard';
+import AdminTeachers from '../pages/admin/AdminTeachers';
+import AdminStudents from '../pages/admin/AdminStudents';
+import AdminCourses from '../pages/admin/AdminCourses';
+import AdminCourseDetail from '../pages/admin/AdminCourseDetail';
+import AdminRevenue from '../pages/admin/AdminRevenue';
 
 // ============================================
 // PROTECTED ROUTE - COMPLETELY REWRITTEN
@@ -133,6 +139,31 @@ const StudentRoute = ({ children }) => {
   }
 
   if (user?.role !== 'student') {
+    return <Navigate to="/" replace />;
+  }
+
+  return children;
+};
+
+const AdminRoute = ({ children }) => {
+  const { user, isAuthenticated, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-screen">
+        <div className="text-center">
+          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-500 mx-auto mb-4"></div>
+          <p className="text-gray-500">Loading...</p>
+        </div>
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    return <Navigate to="/login" replace />;
+  }
+
+  if (user?.role !== 'admin') {
     return <Navigate to="/" replace />;
   }
 
@@ -434,6 +465,55 @@ const AppRouter = () => {
             <ProtectedRoute>
               <NotificationPage />
             </ProtectedRoute>
+          }
+        />
+        {/* Admin Routes */}
+        <Route
+          path="/admin/dashboard"
+          element={
+            <AdminRoute>
+              <AdminDashboard />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/teachers"
+          element={
+            <AdminRoute>
+              <AdminTeachers />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/students"
+          element={
+            <AdminRoute>
+              <AdminStudents />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/courses"
+          element={
+            <AdminRoute>
+              <AdminCourses />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/courses/:id"
+          element={
+            <AdminRoute>
+              <AdminCourseDetail />
+            </AdminRoute>
+          }
+        />
+        <Route
+          path="/admin/revenue"
+          element={
+            <AdminRoute>
+              <AdminRevenue />
+            </AdminRoute>
           }
         />
         <Route path="*" element={<Navigate to="/" replace />} />

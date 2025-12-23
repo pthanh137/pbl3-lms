@@ -1,11 +1,13 @@
 from rest_framework import serializers
 from .models import Course, Section, Lesson
+from .utils import normalize_video_url, check_video_available, replace_lesson_video
 
 
 class LessonSerializer(serializers.ModelSerializer):
     """Serializer for Lesson model."""
     
     document_file_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Lesson
@@ -29,6 +31,12 @@ class LessonSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.document_file.url)
             return obj.document_file.url
         return None
+    
+    def get_video_url(self, obj):
+        """Return normalized video URL."""
+        # Note: Auto-replace is disabled in serializer to avoid performance issues
+        # Use management command or API endpoint for replacement
+        return normalize_video_url(obj.video_url) if obj.video_url else None
 
 
 class SectionSerializer(serializers.ModelSerializer):
@@ -157,6 +165,7 @@ class CurriculumLessonSerializer(serializers.ModelSerializer):
     """Serializer for Lesson in curriculum with completion status."""
     is_completed = serializers.SerializerMethodField()
     document_file_url = serializers.SerializerMethodField()
+    video_url = serializers.SerializerMethodField()
     
     class Meta:
         model = Lesson
@@ -180,6 +189,12 @@ class CurriculumLessonSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(obj.document_file.url)
             return obj.document_file.url
         return None
+    
+    def get_video_url(self, obj):
+        """Return normalized video URL."""
+        # Note: Auto-replace is disabled in serializer to avoid performance issues
+        # Use management command or API endpoint for replacement
+        return normalize_video_url(obj.video_url) if obj.video_url else None
     
     def get_is_completed(self, obj):
         """Check if lesson is completed for the current user."""

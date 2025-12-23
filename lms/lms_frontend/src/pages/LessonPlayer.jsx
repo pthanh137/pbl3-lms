@@ -127,13 +127,38 @@ const LessonPlayer = () => {
       {/* Video Player */}
       {lesson.video_url && (
         <div className="rounded-2xl overflow-hidden shadow-lg bg-black aspect-video">
-          <iframe
-            src={getEmbedUrl(lesson.video_url)}
-            className="w-full h-full"
-            allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
-            allowFullScreen
-            title={lesson.title}
-          />
+          {isYouTubeUrl(lesson.video_url) ? (
+            <iframe
+              src={getEmbedUrl(lesson.video_url)}
+              className="w-full h-full"
+              allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+              allowFullScreen
+              title={lesson.title}
+              frameBorder="0"
+              onLoad={() => {
+                // Iframe loaded successfully
+              }}
+            />
+          ) : (
+            <video
+              src={lesson.video_url}
+              className="w-full h-full object-contain"
+              controls
+              playsInline
+              onError={async () => {
+                // Handle video error - replace video
+                try {
+                  const response = await lessonsAPI.replaceVideo(lessonId);
+                  if (response.data?.success) {
+                    // Reload lesson
+                    fetchLesson();
+                  }
+                } catch (err) {
+                  console.error('Error replacing video:', err);
+                }
+              }}
+            />
+          )}
         </div>
       )}
 
