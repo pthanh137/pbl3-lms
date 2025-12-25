@@ -10,7 +10,7 @@ from courses.models import Course
 from enrollments.models import Enrollment, Certificate, LessonProgress
 from reviews.models import CourseReview
 from assessments.models import StudentQuizAttempt, Submission
-from common.permissions import IsTeacher
+from common.permissions import IsApprovedTeacher
 from .serializers import (
     TeacherAnalyticsSummarySerializer,
     TeacherCourseStatsSerializer,
@@ -38,7 +38,7 @@ class TeacherAnalyticsSummaryView(generics.GenericAPIView):
     5) Verify counts and averages match the data in DB.
     """
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     
     def get(self, request, *args, **kwargs):
         """Return summary analytics for the current teacher."""
@@ -124,7 +124,7 @@ class TeacherAnalyticsCoursesView(generics.GenericAPIView):
     5) Verify counts and averages match the data in DB.
     """
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     
     def get(self, request, *args, **kwargs):
         """Return per-course analytics for the current teacher."""
@@ -193,7 +193,7 @@ class TeacherAnalyticsTimeSeriesView(APIView):
     ]
     """
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     
     def get(self, request, *args, **kwargs):
         """Return time-series analytics."""
@@ -295,7 +295,7 @@ class TeacherAnalyticsEngagementView(APIView):
     }
     """
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     
     def get(self, request, *args, **kwargs):
         """Return engagement metrics for the current teacher."""

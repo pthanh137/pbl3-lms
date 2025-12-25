@@ -12,6 +12,7 @@ class UserSerializer(serializers.ModelSerializer):
             'email',
             'full_name',
             'role',
+            'is_approved',
             'avatar_url',
             'bio',
             'headline',
@@ -20,7 +21,7 @@ class UserSerializer(serializers.ModelSerializer):
             'date_joined',
             'last_login',
         ]
-        read_only_fields = ['id', 'date_joined', 'last_login']
+        read_only_fields = ['id', 'date_joined', 'last_login', 'is_approved']
 
 
 class RegisterSerializer(serializers.ModelSerializer):
@@ -55,6 +56,11 @@ class RegisterSerializer(serializers.ModelSerializer):
         """Create a new user with hashed password."""
         validated_data.pop('password_confirm')
         password = validated_data.pop('password')
+        
+        # Ensure teacher role always has is_approved=False on registration
+        if validated_data.get('role') == 'teacher':
+            validated_data['is_approved'] = False
+        
         user = User.objects.create_user(password=password, **validated_data)
         return user
 

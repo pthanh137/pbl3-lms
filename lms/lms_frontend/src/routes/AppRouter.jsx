@@ -44,6 +44,7 @@ import TeacherAnnouncementDetail from '../pages/TeacherAnnouncementDetail';
 import StudentAnnouncementList from '../pages/StudentAnnouncementList';
 import StudentAnnouncementDetail from '../pages/StudentAnnouncementDetail';
 import NotificationPage from '../pages/NotificationPage';
+import TeacherPendingApproval from '../pages/TeacherPendingApproval';
 import AdminDashboard from '../pages/admin/AdminDashboard';
 import AdminTeachers from '../pages/admin/AdminTeachers';
 import AdminStudents from '../pages/admin/AdminStudents';
@@ -122,6 +123,11 @@ const TeacherRoute = ({ children }) => {
 
   if (user?.role !== 'teacher') {
     return <Navigate to="/" replace />;
+  }
+
+  // Check if teacher is approved
+  if (!user?.is_approved) {
+    return <Navigate to="/teacher/pending-approval" replace />;
   }
 
   return children;
@@ -285,6 +291,11 @@ const AppRouter = () => {
               <CartCheckoutPage />
             </ProtectedRoute>
           }
+        />
+        {/* Teacher Pending Approval */}
+        <Route
+          path="/teacher/pending-approval"
+          element={<TeacherPendingApproval />}
         />
         {/* Teacher Dashboard */}
         <Route

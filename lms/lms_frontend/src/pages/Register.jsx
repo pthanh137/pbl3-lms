@@ -47,8 +47,8 @@ const Register = () => {
 
     setLoading(true);
 
-    const { password_confirm, ...registerData } = formData;
-    const result = await register(registerData);
+    // Send all form data including password_confirm for backend validation
+    const result = await register(formData);
 
     if (result.success) {
       // Get user from result (returned from register function)
@@ -62,7 +62,12 @@ const Register = () => {
         localStorage.removeItem('redirectCourseId');
         navigate(`/courses/${redirectCourseId}`);
       } else if (currentUser?.role === 'teacher') {
-        navigate('/teacher/dashboard');
+        // Check if teacher is approved
+        if (!currentUser?.is_approved) {
+          navigate('/teacher/pending-approval');
+        } else {
+          navigate('/teacher/dashboard');
+        }
       } else {
         // Student or default
         navigate('/dashboard');

@@ -14,6 +14,21 @@ class IsTeacher(permissions.BasePermission):
         )
 
 
+class IsApprovedTeacher(permissions.BasePermission):
+    """
+    Permission to only allow approved teachers (role='teacher' AND is_approved=True) to access.
+    This ensures only admin-approved teachers can use teacher features.
+    """
+    
+    def has_permission(self, request, view):
+        return (
+            request.user and
+            request.user.is_authenticated and
+            request.user.role == 'teacher' and
+            request.user.is_approved is True
+        )
+
+
 class IsOwnerOrReadOnly(permissions.BasePermission):
     """
     Object-level permission to only allow owners of an object to edit it.

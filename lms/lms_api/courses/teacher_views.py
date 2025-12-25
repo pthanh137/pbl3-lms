@@ -11,7 +11,7 @@ from .serializers import (
     LessonSerializer,
     LessonCreateUpdateSerializer,
 )
-from common.permissions import IsTeacher, IsOwnerOrReadOnly
+from common.permissions import IsApprovedTeacher, IsOwnerOrReadOnly
 from .utils import normalize_video_url
 
 
@@ -26,7 +26,7 @@ class TeacherCourseViewSet(viewsets.ModelViewSet):
     DELETE /api/teacher/courses/{id}/ - Delete course
     """
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher, IsOwnerOrReadOnly]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher, IsOwnerOrReadOnly]
     
     def get_queryset(self):
         """Return only courses owned by the current teacher."""
@@ -56,7 +56,7 @@ class TeacherSectionViewSet(viewsets.ModelViewSet):
     DELETE /api/teacher/sections/{id}/ - Delete section
     """
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     
     def get_queryset(self):
         """Return only sections that belong to teacher's courses."""
@@ -122,7 +122,7 @@ class TeacherLessonViewSet(viewsets.ModelViewSet):
     DELETE /api/teacher/lessons/{id}/ - Delete lesson
     """
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     
     def get_queryset(self):
         """Return only lessons that belong to teacher's courses."""

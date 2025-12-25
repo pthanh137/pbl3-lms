@@ -37,7 +37,7 @@ from django.utils import timezone
 from django.shortcuts import get_object_or_404
 from django.db.models import Q
 
-from common.permissions import IsTeacher
+from common.permissions import IsApprovedTeacher
 from courses.models import Course
 from enrollments.models import Enrollment
 from .models import (
@@ -60,7 +60,7 @@ from .serializers import (
 class TeacherQuizViewSet(viewsets.ModelViewSet):
     """ViewSet for teacher quiz management."""
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = QuizSerializer
     
     def get_queryset(self):
@@ -131,7 +131,7 @@ class TeacherQuizViewSet(viewsets.ModelViewSet):
 class QuestionCreateAPIView(generics.CreateAPIView):
     """Create a question for a quiz."""
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = QuestionCreateSerializer
     
     def post(self, request, quiz_id):
@@ -146,7 +146,7 @@ class QuestionCreateAPIView(generics.CreateAPIView):
 class QuestionDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """Manage a single question."""
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = QuestionSerializer
     queryset = Question.objects.all()
     
@@ -158,7 +158,7 @@ class QuestionDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
 class ChoiceCreateAPIView(generics.CreateAPIView):
     """Create a choice for a question."""
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = ChoiceCreateSerializer
     
     def post(self, request, question_id):
@@ -177,7 +177,7 @@ class ChoiceCreateAPIView(generics.CreateAPIView):
 class ChoiceDetailAPIView(generics.RetrieveUpdateDestroyAPIView):
     """Manage a single choice."""
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = ChoiceSerializer
     queryset = Choice.objects.all()
     
@@ -396,7 +396,7 @@ class TeacherQuizSubmissionsView(generics.ListAPIView):
     Returns a plain JSON array of submissions, not nested in an object.
     """
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = TeacherQuizSubmissionSerializer
     
     def get_queryset(self):
@@ -436,7 +436,7 @@ class TeacherQuizSubmissionsView(generics.ListAPIView):
 class TeacherQuizSubmissionDetailView(generics.RetrieveAPIView):
     """Get detailed view of a quiz submission (attempt) for teacher."""
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = TeacherQuizSubmissionSerializer
     
     def get_object(self):
@@ -463,7 +463,7 @@ class TeacherQuizSubmissionDetailView(generics.RetrieveAPIView):
 class TeacherAssignmentViewSet(viewsets.ModelViewSet):
     """ViewSet for teacher assignment management."""
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = AssignmentSerializer
     
     def get_queryset(self):
@@ -520,7 +520,7 @@ class TeacherAssignmentViewSet(viewsets.ModelViewSet):
 class SubmissionGradeAPIView(generics.UpdateAPIView):
     """Grade a submission."""
     
-    permission_classes = [permissions.IsAuthenticated, IsTeacher]
+    permission_classes = [permissions.IsAuthenticated, IsApprovedTeacher]
     serializer_class = SubmissionSerializer
     queryset = Submission.objects.all()
     

@@ -190,7 +190,7 @@ const Navbar = () => {
                   Admin Dashboard
                 </Link>
               )}
-              {user?.role === 'teacher' && (
+              {user?.role === 'teacher' && user?.is_approved && (
                 <>
                   <Link to="/teacher/dashboard" className="text-slate-700 hover:text-primary-500 font-medium text-sm transition-colors">
                     Dashboard

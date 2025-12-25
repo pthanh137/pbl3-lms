@@ -31,7 +31,12 @@ const Login = () => {
       } else if (currentUser?.role === 'admin') {
         navigate('/admin/dashboard');
       } else if (currentUser?.role === 'teacher') {
-        navigate('/teacher/dashboard');
+        // Check if teacher is approved
+        if (!currentUser?.is_approved) {
+          navigate('/teacher/pending-approval');
+        } else {
+          navigate('/teacher/dashboard');
+        }
       } else {
         // Student or default
         navigate('/dashboard');

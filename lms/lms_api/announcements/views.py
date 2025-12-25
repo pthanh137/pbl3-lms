@@ -41,6 +41,9 @@ class SentAnnouncementsListAPIView(generics.ListAPIView):
         if user.role != 'teacher':
             raise PermissionDenied("Only teachers can view sent announcements.")
         
+        if not user.is_approved:
+            raise PermissionDenied("Only approved teachers can view sent announcements.")
+        
         return Announcement.objects.filter(
             teacher=user
         ).select_related('teacher', 'course').order_by('-created_at')
@@ -63,7 +66,9 @@ class AnnouncementDetailAPIView(generics.RetrieveAPIView):
         user = self.request.user
         
         if user.role == 'teacher':
-            # Teachers can view their own announcements
+            # Only approved teachers can view their own announcements
+            if not user.is_approved:
+                raise PermissionDenied("Only approved teachers can view announcements.")
             return Announcement.objects.filter(teacher=user).select_related('teacher', 'course')
         elif user.role == 'student':
             # Students can view announcements from enrolled courses
@@ -92,6 +97,9 @@ class AnnouncementDetailAPIView(generics.RetrieveAPIView):
             except Enrollment.DoesNotExist:
                 raise PermissionDenied("You must be enrolled in this course to view announcements.")
         elif user.role == 'teacher':
+            # Only approved teachers can view announcements
+            if not user.is_approved:
+                raise PermissionDenied("Only approved teachers can view announcements.")
             # Verify teacher owns the announcement
             if announcement.teacher != user:
                 raise PermissionDenied("You can only view your own announcements.")
@@ -122,6 +130,9 @@ class CourseAnnouncementsListAPIView(generics.ListAPIView):
         
         # Check permissions
         if user.role == 'teacher':
+            # Only approved teachers can view course announcements
+            if not user.is_approved:
+                raise PermissionDenied("Only approved teachers can view course announcements.")
             # Teacher can view their own course announcements
             if course.teacher != user:
                 raise PermissionDenied("You can only view announcements for your own courses.")
@@ -164,6 +175,9 @@ class MyAnnouncementsListAPIView(generics.ListAPIView):
             ).select_related('teacher', 'course').order_by('-created_at')
         
         elif user.role == 'teacher':
+            # Only approved teachers can view their sent announcements
+            if not user.is_approved:
+                raise PermissionDenied("Only approved teachers can view sent announcements.")
             # Get all announcements sent by this teacher
             return Announcement.objects.filter(
                 teacher=user

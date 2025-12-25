@@ -4,11 +4,15 @@ from enrollments.models import Enrollment
 
 
 class IsCourseTeacher(permissions.BasePermission):
-    """Permission to check if user is the teacher of a course."""
+    """Permission to check if user is an approved teacher of a course."""
     
     def has_permission(self, request, view):
-        """Check if user is authenticated and is a teacher."""
+        """Check if user is authenticated, is an approved teacher."""
         if not request.user or not request.user.is_authenticated:
+            return False
+        
+        # Must be an approved teacher
+        if request.user.role != 'teacher' or not request.user.is_approved:
             return False
         
         # For create actions, check course_id in request data
@@ -23,7 +27,7 @@ class IsCourseTeacher(permissions.BasePermission):
                     return False
         
         # For other actions, check in view
-        return request.user.role == 'teacher'
+        return True
     
     def has_object_permission(self, request, view, obj):
         """Check if user is the teacher of the announcement's course."""

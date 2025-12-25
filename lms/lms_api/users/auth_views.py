@@ -123,7 +123,8 @@ class InstructorPublicProfileAPIView(APIView):
     def get(self, request, instructor_id):
         """Return public profile of the instructor."""
         try:
-            instructor = User.objects.get(id=instructor_id, role='teacher')
+            # Only show approved teachers in public profile
+            instructor = User.objects.get(id=instructor_id, role='teacher', is_approved=True)
         except User.DoesNotExist:
             return Response(
                 {"detail": "Instructor not found"},
@@ -155,9 +156,10 @@ class TopInstructorsAPIView(APIView):
         from reviews.models import CourseReview
         from django.db.models import Avg, Count
         
-        # Get all teachers with published courses
+        # Get all approved teachers with published courses
         teachers = User.objects.filter(
             role='teacher',
+            is_approved=True,
             courses__is_published=True
         ).distinct()
         
