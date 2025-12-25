@@ -7,17 +7,19 @@ import QuizHistory from './QuizHistory';
  */
 const QuizResult = ({
   quiz,
-  result, // { score, total_points, percentage }
+  result, // { score_percent, correct_answers, incorrect_answers, total_questions, points_display }
   userAnswers, // { [questionId]: selectedChoiceId }
   questions = [],
   onRetake
 }) => {
   const navigate = useNavigate();
 
-  // Calculate correct/incorrect counts based on score
-  const estimatedCorrect = result?.score && result?.total_points && questions.length > 0
-    ? Math.round((result.score / result.total_points) * questions.length)
-    : 0;
+  // Use data from backend - DO NOT calculate on frontend
+  const correctAnswers = result?.correct_answers ?? 0;
+  const incorrectAnswers = result?.incorrect_answers ?? 0;
+  const totalQuestions = result?.total_questions ?? 0;
+  const scorePercent = result?.score_percent ?? result?.percentage ?? 0;
+  const pointsDisplay = result?.points_display ?? `${correctAnswers} / ${totalQuestions}`;
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-white via-slate-50 to-white">
@@ -53,32 +55,32 @@ const QuizResult = ({
           <div className="flex items-center justify-center gap-12 mb-8">
             <div className="bg-white rounded-2xl p-6 shadow-md border-2 border-primary-200">
               <div className="text-6xl font-bold bg-gradient-to-r from-primary-600 to-secondary-600 bg-clip-text text-transparent mb-2">
-                {result?.percentage?.toFixed(1) || 0}%
+                {scorePercent.toFixed(1)}%
               </div>
               <div className="text-base font-semibold text-slate-600">Score</div>
             </div>
             <div className="w-px h-20 bg-slate-300"></div>
             <div className="bg-white rounded-2xl p-6 shadow-md border-2 border-primary-200">
               <div className="text-4xl font-bold text-slate-900 mb-2">
-                {result?.score || 0} / {result?.total_points || 0}
+                {pointsDisplay}
               </div>
               <div className="text-base font-semibold text-slate-600">Points</div>
             </div>
           </div>
           
           {/* Stats - Coursera Style */}
-          {questions.length > 0 && (
+          {totalQuestions > 0 && (
             <div className="flex items-center justify-center gap-8">
               <div className="flex items-center gap-3 bg-accent-50 px-6 py-3 rounded-full border-2 border-accent-200">
                 <div className="w-4 h-4 rounded-full bg-accent-500"></div>
                 <span className="text-slate-900 font-bold">
-                  <span className="text-lg">{estimatedCorrect}</span> Correct
+                  <span className="text-lg">{correctAnswers}</span> Correct
                 </span>
               </div>
               <div className="flex items-center gap-3 bg-red-50 px-6 py-3 rounded-full border-2 border-red-200">
                 <div className="w-4 h-4 rounded-full bg-red-500"></div>
                 <span className="text-slate-900 font-bold">
-                  <span className="text-lg">{questions.length - estimatedCorrect}</span> Incorrect
+                  <span className="text-lg">{incorrectAnswers}</span> Incorrect
                 </span>
               </div>
             </div>

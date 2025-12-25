@@ -80,10 +80,49 @@ class QuizDetailStudentSerializer(serializers.ModelSerializer):
 class StudentQuizAttemptSerializer(serializers.ModelSerializer):
     """Serializer for StudentQuizAttempt."""
     
+    quiz_id = serializers.IntegerField(source='quiz.id', read_only=True)
+    student_id = serializers.IntegerField(source='student.id', read_only=True)
+    
     class Meta:
         model = StudentQuizAttempt
-        fields = ['id', 'quiz', 'student', 'started_at', 'completed_at', 'score', 'status']
-        read_only_fields = ['student', 'started_at', 'completed_at', 'score', 'status']
+        fields = ['id', 'quiz_id', 'student_id', 'started_at', 'completed_at', 'score', 'correct_answers', 'total_questions', 'status']
+        read_only_fields = ['id', 'student_id', 'quiz_id', 'started_at', 'completed_at', 'score', 'correct_answers', 'total_questions', 'status']
+
+
+class StudentQuizResultSerializer(serializers.ModelSerializer):
+    """Serializer for student quiz result - unified with teacher view."""
+    
+    correct_answers = serializers.IntegerField(read_only=True)
+    total_questions = serializers.IntegerField(read_only=True)
+    incorrect_answers = serializers.SerializerMethodField()
+    score_percent = serializers.FloatField(source='score', read_only=True)
+    points_display = serializers.SerializerMethodField()
+    
+    class Meta:
+        model = StudentQuizAttempt
+        fields = [
+            'id',
+            'score',
+            'score_percent',
+            'correct_answers',
+            'incorrect_answers',
+            'total_questions',
+            'points_display',
+            'completed_at',
+        ]
+        read_only_fields = ['id', 'score', 'correct_answers', 'total_questions', 'completed_at']
+    
+    def get_incorrect_answers(self, obj):
+        """Calculate incorrect answers."""
+        if obj.status != 'completed' or not obj.total_questions:
+            return 0
+        return max(0, obj.total_questions - obj.correct_answers)
+    
+    def get_points_display(self, obj):
+        """Get points display string."""
+        if obj.status != 'completed' or not obj.total_questions:
+            return "0 / 0"
+        return f"{obj.correct_answers} / {obj.total_questions}"
 
 
 class StudentAnswerDetailSerializer(serializers.ModelSerializer):
@@ -199,6 +238,9 @@ class TeacherQuizSubmissionSerializer(serializers.ModelSerializer):
     student_profile_id = serializers.IntegerField(source='student.id', read_only=True)
     correct_answers = serializers.SerializerMethodField()
     total_questions = serializers.SerializerMethodField()
+    incorrect_answers = serializers.SerializerMethodField()
+    score_percent = serializers.FloatField(source='score', read_only=True)
+    points_display = serializers.SerializerMethodField()
     time_spent_minutes = serializers.SerializerMethodField()
     time_spent = serializers.SerializerMethodField()  # Add time_spent in seconds
     time_spent_seconds = serializers.IntegerField(read_only=True, allow_null=True)  # Use property from model, can be null
@@ -211,8 +253,11 @@ class TeacherQuizSubmissionSerializer(serializers.ModelSerializer):
             'student',
             'student_profile_id',
             'score',
+            'score_percent',
             'correct_answers',
+            'incorrect_answers',
             'total_questions',
+            'points_display',
             'time_spent_minutes',
             'time_spent',  # Add time_spent in seconds
             'time_spent_seconds',  # Use property from model
@@ -221,23 +266,31 @@ class TeacherQuizSubmissionSerializer(serializers.ModelSerializer):
         read_only_fields = ['id', 'score']
     
     def get_correct_answers(self, obj):
-        """Count correct answers."""
+        """Get correct answers from model field (fallback to calculation for old records)."""
         if obj.status != 'completed':
             return 0
+        # Use stored field if available, otherwise calculate (for backward compatibility)
+        if obj.correct_answers > 0:
+            return obj.correct_answers
+        # Fallback calculation for old records
         try:
-            # Use prefetched answers if available, otherwise query
             if hasattr(obj, '_prefetched_objects_cache') and 'answers' in obj._prefetched_objects_cache:
                 answers = obj._prefetched_objects_cache['answers']
             else:
                 answers = obj.answers.all()
-            
             count = sum(1 for answer in answers if answer.selected_choice and answer.selected_choice.is_correct)
             return int(count)
         except Exception:
             return 0
     
     def get_total_questions(self, obj):
-        """Get total number of questions in the quiz."""
+        """Get total questions from model field (fallback to calculation for old records)."""
+        if obj.status != 'completed':
+            return 0
+        # Use stored field if available, otherwise calculate (for backward compatibility)
+        if obj.total_questions > 0:
+            return obj.total_questions
+        # Fallback calculation for old records
         try:
             if obj.quiz:
                 count = obj.quiz.questions.count()
@@ -245,6 +298,20 @@ class TeacherQuizSubmissionSerializer(serializers.ModelSerializer):
             return 0
         except Exception:
             return 0
+    
+    def get_incorrect_answers(self, obj):
+        """Calculate incorrect answers."""
+        correct = self.get_correct_answers(obj)
+        total = self.get_total_questions(obj)
+        if total == 0:
+            return 0
+        return max(0, total - correct)
+    
+    def get_points_display(self, obj):
+        """Get points display string."""
+        correct = self.get_correct_answers(obj)
+        total = self.get_total_questions(obj)
+        return f"{correct} / {total}"
     
     def get_time_spent_minutes(self, obj):
         """Calculate time spent in minutes using start_time and end_time."""

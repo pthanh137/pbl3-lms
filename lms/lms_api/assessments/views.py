@@ -341,8 +341,10 @@ class QuizSubmitAPIView(generics.CreateAPIView):
         # Set end_time when student submits quiz
         now = timezone.now()
         
-        # Update attempt with percentage score
-        attempt.score = score_percentage
+        # Update attempt with all calculated fields
+        attempt.score = round(score_percentage, 2)
+        attempt.correct_answers = correct_answers
+        attempt.total_questions = total_questions
         attempt.status = 'completed'
         attempt.completed_at = now
         attempt.end_time = now  # Set end_time when student submits quiz
@@ -365,12 +367,19 @@ class QuizSubmitAPIView(generics.CreateAPIView):
             course=quiz.course
         )
         
+        # Calculate incorrect answers
+        incorrect_answers = total_questions - correct_answers
+        
         return Response({
-            'score': score_percentage,
+            'score_percent': round(score_percentage, 2),
             'total_points': total_points,
             'obtained_points': obtained_points,
             'correct_answers': correct_answers,
+            'incorrect_answers': incorrect_answers,
             'total_questions': total_questions,
+            'points_display': f"{correct_answers} / {total_questions}",
+            # Keep backward compatibility
+            'score': round(score_percentage, 2),
             'percentage': round(score_percentage, 2)
         }, status=status.HTTP_200_OK)
 

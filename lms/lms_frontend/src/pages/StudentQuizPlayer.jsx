@@ -142,10 +142,17 @@ const StudentQuizPlayer = () => {
 
     try {
       const response = await studentQuizAPI.submitQuiz(quizId, payload);
+      // Use data from backend - unified with teacher view
       setResult({
-        score: response.data.score,
+        score_percent: response.data.score_percent || response.data.score || response.data.percentage,
+        correct_answers: response.data.correct_answers,
+        incorrect_answers: response.data.incorrect_answers,
+        total_questions: response.data.total_questions,
+        points_display: response.data.points_display || `${response.data.correct_answers} / ${response.data.total_questions}`,
+        // Keep backward compatibility
+        score: response.data.obtained_points || response.data.score,
         total_points: response.data.total_points,
-        percentage: response.data.percentage,
+        percentage: response.data.score_percent || response.data.score || response.data.percentage,
       });
       
       // Store user answers for result display

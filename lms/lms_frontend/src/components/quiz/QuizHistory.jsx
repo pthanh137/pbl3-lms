@@ -42,12 +42,7 @@ const QuizHistory = ({ quizId, quiz, onViewAttempt }) => {
     });
   };
 
-  const calculatePercentage = (score, totalPoints) => {
-    if (!totalPoints || totalPoints === 0) return 0;
-    return (score / totalPoints) * 100;
-  };
-
-  const totalPoints = quiz?.questions?.reduce((sum, q) => sum + (q.points || 1), 0) || 0;
+  // DO NOT calculate percentage on frontend - use from backend
 
   if (loading) {
     return (
@@ -67,7 +62,12 @@ const QuizHistory = ({ quizId, quiz, onViewAttempt }) => {
       <h3 className="text-2xl font-bold text-slate-900 mb-6">Attempt History</h3>
       <div className="space-y-4">
         {attempts.map((attempt, index) => {
-          const percentage = calculatePercentage(attempt.score, totalPoints);
+          // Use score_percent from backend (score field is percentage 0-100)
+          const percentage = attempt.score || 0; // score is already percentage
+          const pointsDisplay = attempt.points_display || 
+            (attempt.correct_answers !== undefined && attempt.total_questions !== undefined
+              ? `${attempt.correct_answers} / ${attempt.total_questions}`
+              : `${attempt.score || 0}%`);
           const isLatest = index === 0;
           const isPerfect = percentage === 100;
           const isGood = percentage >= 70;
@@ -120,7 +120,7 @@ const QuizHistory = ({ quizId, quiz, onViewAttempt }) => {
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4M7.835 4.697a3.42 3.42 0 001.946-.806 3.42 3.42 0 014.438 0 3.42 3.42 0 001.946.806 3.42 3.42 0 013.138 3.138 3.42 3.42 0 00.806 1.946 3.42 3.42 0 010 4.438 3.42 3.42 0 00-.806 1.946 3.42 3.42 0 01-3.138 3.138 3.42 3.42 0 00-1.946.806 3.42 3.42 0 01-4.438 0 3.42 3.42 0 00-1.946-.806 3.42 3.42 0 01-3.138-3.138 3.42 3.42 0 00-.806-1.946 3.42 3.42 0 010-4.438 3.42 3.42 0 00.806-1.946 3.42 3.42 0 013.138-3.138z" />
                       </svg>
                       <span className="text-base font-bold text-slate-900">
-                        {attempt.score} / {totalPoints} points
+                        {pointsDisplay}
                       </span>
                     </div>
                   </div>

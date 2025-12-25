@@ -94,7 +94,9 @@ class StudentQuizAttempt(models.Model):
     completed_at = models.DateTimeField(null=True, blank=True)
     start_time = models.DateTimeField(null=True, blank=True)
     end_time = models.DateTimeField(null=True, blank=True)
-    score = models.FloatField(default=0)
+    score = models.FloatField(default=0, help_text="Score as percentage (0-100)")
+    correct_answers = models.IntegerField(default=0, help_text="Number of correct answers")
+    total_questions = models.IntegerField(default=0, help_text="Total number of questions in quiz")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='in_progress')
     
     class Meta:
